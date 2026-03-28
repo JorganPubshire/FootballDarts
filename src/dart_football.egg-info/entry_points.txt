@@ -1,0 +1,2 @@
+[console_scripts]
+dart-football = dart_football.cli.app:main

@@ -1,0 +1,38 @@
+Metadata-Version: 2.4
+Name: dart-football
+Version: 0.1.0
+Summary: CLI state machine for Dart Football (rules-driven)
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: questionary>=2.0
+Requires-Dist: rich>=13.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+
+# Dart Football
+
+Python CLI and rules-driven game engine.
+
+## Run
+
+From the project directory, after installing the package in editable mode:
+
+```text
+pip install -e ".[dev]"
+```
+
+Then either:
+
+```text
+python -m dart_football
+```
+
+or (if your Python `Scripts` folder is on `PATH`):
+
+```text
+dart-football
+```
+
+Use `python -m dart_football` — not `python -m dart_football.cli` (the CLI lives under `dart_football.cli.app`).
+
+Options: `--rules path\to\rules.toml`, `--load session.json`, `--force` (with `--load` when ruleset metadata does not match).
