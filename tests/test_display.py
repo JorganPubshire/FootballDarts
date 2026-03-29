@@ -104,7 +104,9 @@ def test_format_field_visual_contains_markers() -> None:
         timeouts=Timeouts(3, 3, 3, 3),
     )
     out = format_field_visual(s, phase=Phase.SCRIMMAGE_OFFENSE).plain
-    assert "●" in out or "◆" in out
+    assert "▼" in out and "▽" in out
+    assert "▲" in out and "△" in out
+    assert "●" in out
     assert "LOS 35" in out
     assert "1st-down line 45" in out
 
