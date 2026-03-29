@@ -8,6 +8,8 @@ from typing import Any, Callable
 
 from dart_football.engine.events import (
     CallTimeout,
+    ChooseKickoffKind,
+    ChooseKickoffTouchbackOrRun,
     ChooseKickOrReceive,
     ChoosePatOrTwo,
     CoinTossWinner,
@@ -16,6 +18,8 @@ from dart_football.engine.events import (
     FieldGoalOutcome,
     FourthDownChoice,
     KickoffKick,
+    KickoffReturnKick,
+    KickoffRunOutKick,
     PuntKick,
     ScrimmageDefense,
     ScrimmageOffense,
@@ -41,8 +45,23 @@ def _event_to_dict(e: Event) -> dict[str, Any]:
         return {"type": name, "winner": e.winner.value}
     if name == "ChooseKickOrReceive":
         return {"type": name, "kick": e.kick}
+    if name == "ChooseKickoffKind":
+        return {"type": name, "onside": e.onside}
     if name == "KickoffKick":
         return {"type": name, "segment": e.segment, "bull": e.bull}
+    if name == "ChooseKickoffTouchbackOrRun":
+        return {"type": name, "take_touchback": e.take_touchback}
+    if name == "KickoffRunOutKick":
+        return {"type": name, "segment": e.segment, "bull": e.bull}
+    if name == "KickoffReturnKick":
+        return {
+            "type": name,
+            "segment": e.segment,
+            "double_ring": e.double_ring,
+            "triple_ring": e.triple_ring,
+            "triple_inner": e.triple_inner,
+            "bull": e.bull,
+        }
     if name == "ScrimmageOffense":
         return {
             "type": name,
@@ -84,9 +103,32 @@ def _event_from_dict(d: dict[str, Any]) -> Event:
         return CoinTossWinner(TeamId(d["winner"]))
     if t == "ChooseKickOrReceive":
         return ChooseKickOrReceive(kick=bool(d["kick"]))
+    if t == "ChooseKickoffKind":
+        return ChooseKickoffKind(onside=bool(d["onside"]))
     if t == "KickoffKick":
         return KickoffKick(
             segment=int(d["segment"]),
+            bull=d.get("bull", "none"),  # type: ignore[arg-type]
+        )
+    if t == "ChooseKickoffTouchbackOrRun":
+        return ChooseKickoffTouchbackOrRun(take_touchback=bool(d["take_touchback"]))
+    if t == "KickoffRunOutKick":
+        return KickoffRunOutKick(
+            segment=int(d["segment"]),
+            bull=d.get("bull", "none"),  # type: ignore[arg-type]
+        )
+    if t == "KickoffReturnKick":
+        ti = d.get("triple_inner")
+        triple_inner: bool | None
+        if ti is None:
+            triple_inner = None
+        else:
+            triple_inner = bool(ti)
+        return KickoffReturnKick(
+            segment=int(d["segment"]),
+            double_ring=bool(d.get("double_ring", False)),
+            triple_ring=bool(d.get("triple_ring", False)),
+            triple_inner=triple_inner,
             bull=d.get("bull", "none"),  # type: ignore[arg-type]
         )
     if t == "ScrimmageOffense":
@@ -179,10 +221,18 @@ def _decode_state(d: dict[str, Any]) -> GameState:
         coin_toss_winner=team(d.get("coin_toss_winner")),
         kickoff_kicker=team(d.get("kickoff_kicker")),
         kickoff_receiver=team(d.get("kickoff_receiver")),
+        kickoff_awaiting=str(d.get("kickoff_awaiting", "none")),
+        kickoff_pending_touchback_line=(
+            int(d["kickoff_pending_touchback_line"])
+            if d.get("kickoff_pending_touchback_line") is not None
+            else None
+        ),
         declared_fg_attempt=bool(d.get("declared_fg_attempt", False)),
         declared_punt=bool(d.get("declared_punt", False)),
         declared_onside=bool(d.get("declared_onside", False)),
+        kickoff_type_selected=bool(d.get("kickoff_type_selected", True)),
         last_play_of_period=bool(d.get("last_play_of_period", False)),
+        skip_next_play_clock_bump=bool(d.get("skip_next_play_clock_bump", False)),
         scrimmage_pending_offense_yards=(
             int(d["scrimmage_pending_offense_yards"])
             if d.get("scrimmage_pending_offense_yards") is not None

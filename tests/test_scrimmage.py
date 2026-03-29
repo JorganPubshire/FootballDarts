@@ -29,7 +29,7 @@ def _red_ball_own_25() -> GameState:
 
 
 def test_scrimmage_declare_punt_from_offense(rules: RuleSet) -> None:
-    # PDF: cannot punt on first down
+    # cannot punt on first down
     s0 = GameState(
         scores=Scoreboard(),
         offense=TeamId.RED,
@@ -43,7 +43,7 @@ def test_scrimmage_declare_punt_from_offense(rules: RuleSet) -> None:
 
 
 def test_scrimmage_declare_fg_in_range(rules: RuleSet) -> None:
-    # PDF: FG on 3rd/4th; own 40, 60 yd kick rounded → 60-yard line OK (own 40–49)
+    # FG on 3rd/4th; own 40, 60 yd kick rounded → 60-yard line OK (own 40–49)
     s0 = GameState(
         scores=Scoreboard(),
         offense=TeamId.RED,
@@ -99,10 +99,91 @@ def test_scrimmage_offense_then_defense_advances(rules: RuleSet) -> None:
     assert o2.state.scrimmage_pending_offense_yards is None
 
 
+def test_offense_green_bull_counts_as_green_wedge_yards(rules: RuleSet) -> None:
+    bg = rules.scrimmage.bull_green_segment
+    s0 = _red_ball_own_25()
+    o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(segment=bg, bull="green"), rules)
+    assert o1.phase == Phase.SCRIMMAGE_DEFENSE
+    assert o1.state.scrimmage_pending_offense_yards == bg
+    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(10), rules)
+    assert o2.state.offense == TeamId.RED
+    assert o2.state.field.scrimmage_line == 25 + (bg - 10)
+
+
+def test_offense_red_bull_turnover_at_los(rules: RuleSet) -> None:
+    br = rules.scrimmage.bull_red_segment
+    s0 = _red_ball_own_25()
+    o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(segment=br, bull="red"), rules)
+    assert o1.phase == Phase.SCRIMMAGE_OFFENSE
+    assert o1.state.offense == TeamId.GREEN
+    assert o1.state.field.scrimmage_line == 25
+    assert o1.state.field.goal_yard == 0
+
+
+def test_defense_green_bull_nullifies_defense_yards(rules: RuleSet) -> None:
+    bg = rules.scrimmage.bull_green_segment
+    s0 = _red_ball_own_25()
+    o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
+    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="green"), rules)
+    assert o2.state.offense == TeamId.RED
+    assert o2.state.field.scrimmage_line == 30
+
+
+def test_defense_red_bull_turnover_at_forward_progress(rules: RuleSet) -> None:
+    br = rules.scrimmage.bull_red_segment
+    s0 = _red_ball_own_25()
+    o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
+    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules)
+    assert o2.phase == Phase.SCRIMMAGE_OFFENSE
+    assert o2.state.offense == TeamId.GREEN
+    assert o2.state.field.scrimmage_line == 30
+    assert o2.state.field.goal_yard == 0
+
+
+def test_defense_red_bull_does_not_void_touchdown(rules: RuleSet) -> None:
+    br = rules.scrimmage.bull_red_segment
+    s0 = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(96, 100),
+        downs=DownAndDistance(1, 4, 96),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
+    o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
+    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules)
+    assert o2.phase == Phase.PAT_OR_TWO_DECISION
+    assert o2.state.scores.red == 6
+
+
+def test_turnover_on_downs_after_fourth_down_no_first_down(rules: RuleSet) -> None:
+    """Standard scrimmage: 4th down with no new first down flips possession at the new LOS."""
+    s0 = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(25, 100),
+        downs=DownAndDistance(4, 10, 25),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
+    # Offense 4 yd vs defense 4 yd → net 0; down advances past 4 → turnover on downs
+    o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(4, False, False), rules)
+    assert o1.phase == Phase.SCRIMMAGE_DEFENSE
+    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(4), rules)
+    assert not isinstance(o2, TransitionError)
+    assert o2.phase == Phase.SCRIMMAGE_OFFENSE
+    assert o2.state.offense == TeamId.GREEN
+    assert o2.state.field.scrimmage_line == 25
+    assert o2.state.field.goal_yard == 0
+    assert o2.state.downs.down == 1
+    assert o2.state.downs.to_go == 10
+    assert "turnover on downs" in o2.effects_summary.lower()
+
+
 def test_scrimmage_double_ring(rules: RuleSet) -> None:
     s0 = _red_ball_own_25()
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, True, False), rules)
-    # PDF segment×1 base (5) × double (2) = 10
+    # segment×1 base (5) × double (2) = 10
     assert o1.state.scrimmage_pending_offense_yards == 10
     o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(5), rules)
     assert o2.state.field.scrimmage_line == 30
@@ -117,7 +198,7 @@ def test_touchdown_then_pat_then_kickoff(rules: RuleSet) -> None:
         clock=GameClock(1, 0, 0),
         timeouts=Timeouts(3, 3, 3, 3),
     )
-    # PDF segment×1: need net ≥ 1 — e.g. offense 2 vs defense 1
+    # segment×1: need net ≥ 1 — e.g. offense 2 vs defense 1
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(2, False, False), rules)
     o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(1), rules)
     assert o2.phase == Phase.PAT_OR_TWO_DECISION
@@ -127,6 +208,7 @@ def test_touchdown_then_pat_then_kickoff(rules: RuleSet) -> None:
     assert o3.phase == Phase.EXTRA_POINT_ATTEMPT
     o4 = transition(o3.state, Phase.EXTRA_POINT_ATTEMPT, ExtraPointOutcome(good=True), rules)
     assert o4.phase == Phase.KICKOFF_KICK
+    assert not o4.state.kickoff_type_selected
     assert o4.state.scores.red == 7
     assert o4.state.kickoff_kicker == TeamId.RED
     assert o4.state.kickoff_receiver == TeamId.GREEN
@@ -166,6 +248,7 @@ def test_fourth_down_field_goal_then_kickoff(rules: RuleSet) -> None:
     assert o1.phase == Phase.FIELD_GOAL_ATTEMPT
     o2 = transition(o1.state, Phase.FIELD_GOAL_ATTEMPT, FieldGoalOutcome(kind="good"), rules)
     assert o2.phase == Phase.KICKOFF_KICK
+    assert not o2.state.kickoff_type_selected
     assert o2.state.scores.red == 3
     assert o2.state.offense == TeamId.RED
     assert o2.state.field.scrimmage_line == 35

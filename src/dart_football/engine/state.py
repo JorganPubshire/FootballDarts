@@ -86,10 +86,18 @@ class GameState:
     coin_toss_winner: TeamId | None = None
     kickoff_kicker: TeamId | None = None
     kickoff_receiver: TeamId | None = None
+    #: "none" | "run_or_spot" | "return_dart" | "run_out_dart" — kickoff sequence not finished until cleared.
+    kickoff_awaiting: str = "none"
+    #: When awaiting run_or_spot: own-yard line for the touchback option (e.g. 35).
+    kickoff_pending_touchback_line: int | None = None
     declared_fg_attempt: bool = False
     declared_punt: bool = False
     declared_onside: bool = False
+    #: False while waiting for ChooseKickoffKind; True once kicker picked regular/onside.
+    kickoff_type_selected: bool = True
     last_play_of_period: bool = False
+    #: After a timeout, the next play that would advance the game play counter does not.
+    skip_next_play_clock_bump: bool = False
     scrimmage_pending_offense_yards: int | None = None
     last_touchdown_team: TeamId | None = None
 

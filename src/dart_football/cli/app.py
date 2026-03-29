@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+from typing import Literal
 
 import questionary
+from questionary import Choice, Separator
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -20,11 +22,36 @@ from dart_football.display import (
 )
 from dart_football.display.field_visual import format_field_visual
 from dart_football.engine.events import CallTimeout, Event
-from dart_football.engine.phases import Phase
+from dart_football.engine.phases import Phase, is_scrimmage_play_phase
 from dart_football.engine.session import GameSession
 from dart_football.engine.state import GameState, TeamId
 from dart_football.engine.transitions import TransitionError
 from dart_football.rules.loader import default_ruleset_path, load_rules_path
+
+_NON_SCRIMMAGE_STATUS: dict[Phase, str] = {
+    Phase.CHOOSE_KICK_OR_RECEIVE: "opening: kick or receive (no scrimmage down)",
+    Phase.KICKOFF_KICK: "kickoff sequence (no scrimmage series yet)",
+    Phase.KICKOFF_RUN_OR_SPOT: "kickoff sequence (no scrimmage series yet)",
+    Phase.KICKOFF_RUN_OUT_DART: "kickoff sequence (no scrimmage series yet)",
+    Phase.KICKOFF_RETURN_DART: "kickoff sequence (no scrimmage series yet)",
+    Phase.ONSIDE_KICK: "onside kick (no scrimmage series yet)",
+    Phase.FIELD_GOAL_ATTEMPT: "field goal attempt (no scrimmage down)",
+    Phase.PUNT_ATTEMPT: "punt attempt (no scrimmage down)",
+    Phase.PAT_OR_TWO_DECISION: "extra point or two point conversion choice (no scrimmage down)",
+    Phase.EXTRA_POINT_ATTEMPT: "extra point (no scrimmage down)",
+    Phase.TWO_POINT_ATTEMPT: "two point conversion (no scrimmage down)",
+    Phase.SAFETY_SEQUENCE: "safety sequence (not fully implemented)",
+    Phase.OVERTIME_START: "overtime (not fully implemented)",
+    Phase.GAME_OVER: "game over",
+    Phase.PRE_GAME_COIN_TOSS: "pre-game",
+}
+
+
+def _los_distance_suffix(state: GameState, phase: Phase) -> str:
+    if is_scrimmage_play_phase(phase):
+        return format_down_distance(state)
+    return _NON_SCRIMMAGE_STATUS.get(phase, "no scrimmage down & distance")
+
 
 _SAVE_STYLE = questionary.Style(
     [
@@ -34,11 +61,28 @@ _SAVE_STYLE = questionary.Style(
     ]
 )
 
+_TIMEOUT_PAUSE_STYLE = questionary.Style(
+    [
+        ("qmark", "fg:cyan bold"),
+        ("question", "bold"),
+        ("answer", "fg:green"),
+        ("pointer", "fg:cyan bold"),
+        ("highlighted", "fg:cyan bold"),
+        ("selected", "fg:green"),
+    ]
+)
+
 
 def _render_header(console: Console, session: GameSession, state: GameState, phase: Phase) -> None:
     title = Text("Dart Football", style="bold white on dark_blue")
+    pq = session.rules.structure.plays_per_quarter
+    q_plays = (
+        f"  ·  Q plays {state.clock.plays_in_quarter}/{pq}"
+        if pq > 0
+        else ""
+    )
     score = Text(
-        f"  Red {state.scores.red}  ·  Green {state.scores.green}  ·  Q{state.clock.quarter}  ·  "
+        f"  Red {state.scores.red}  ·  Green {state.scores.green}  ·  Q{state.clock.quarter}{q_plays}  ·  "
         f"plays {state.clock.total_plays}",
         style="white",
     )
@@ -49,7 +93,9 @@ def _render_header(console: Console, session: GameSession, state: GameState, pha
         Text(f"Phase: {phase.value.replace('_', ' ')}", style="dim")
     )
     if phase is not Phase.PRE_GAME_COIN_TOSS or session.head > 0:
-        tbl.add_row(Text(format_possession_summary(state), style="yellow"))
+        show_ball_on_field = phase is not Phase.CHOOSE_KICK_OR_RECEIVE
+        if show_ball_on_field:
+            tbl.add_row(Text(format_possession_summary(state), style="yellow"))
         q = state.clock.quarter
         first_half = q <= 2
         t = state.timeouts
@@ -58,33 +104,36 @@ def _render_header(console: Console, session: GameSession, state: GameState, pha
         tbl.add_row(
             Text(
                 f"Timeouts (this half): Red {r_left}  ·  Green {g_left}  ·  "
-                "calling timeout does not count a play",
+                "Timeout menu: you choose which team's timeout is charged; next play does not advance the play counter.",
                 style="dim",
             )
         )
-        if phase in (Phase.KICKOFF_KICK, Phase.ONSIDE_KICK):
+        if show_ball_on_field:
             tbl.add_row(
                 Text(
                     f"LOS: {format_line_of_scrimmage(state.offense, state.field)}  ·  "
                     f"{format_distance_to_goal(state.offense, state.field)}  ·  "
-                    "kickoff (no offensive series)",
+                    f"{_los_distance_suffix(state, phase)}",
                     style="white",
                 )
             )
+            tbl.add_row(format_field_visual(state, phase=phase))
         else:
             tbl.add_row(
                 Text(
-                    f"LOS: {format_line_of_scrimmage(state.offense, state.field)}  ·  "
-                    f"{format_distance_to_goal(state.offense, state.field)}  ·  "
-                    f"{format_down_distance(state)}",
-                    style="white",
+                    "Kickoff not started — ball is not on the field yet.",
+                    style="dim",
                 )
             )
-        tbl.add_row(format_field_visual(state, phase=phase))
     if state.kickoff_kicker and state.kickoff_receiver:
+        ko = (
+            "Onside kick: "
+            if phase is Phase.ONSIDE_KICK
+            else "Kickoff: "
+        )
         tbl.add_row(
             Text(
-                f"Kickoff: {team_display_name(state.kickoff_kicker)} kicks → "
+                f"{ko}{team_display_name(state.kickoff_kicker)} kicks → "
                 f"{team_display_name(state.kickoff_receiver)} receives",
                 style="cyan",
             )
@@ -115,8 +164,15 @@ def _undo(session: GameSession, console: Console) -> None:
 
 
 def _save_prompt(session: GameSession, console: Console) -> None:
+    console.print(
+        Panel(
+            "Save the current session to a JSON file.",
+            title="Save",
+            border_style="blue",
+        )
+    )
     path = questionary.text(
-        "Save session to file path:",
+        "Path:",
         style=_SAVE_STYLE,
     ).ask()
     if path is None or not str(path).strip():
@@ -127,6 +183,77 @@ def _save_prompt(session: GameSession, console: Console) -> None:
         console.print(f"[green]Saved[/green] {p.resolve()}")
     except OSError as e:
         console.print(f"[red]Save failed:[/red] {e}")
+
+
+def _pick_timeout_team(console: Console) -> TeamId | None:
+    console.print()
+    console.print(
+        Panel(
+            "Choose which team's timeout to charge. "
+            "Use [bold]Cancel[/bold] if you opened this by mistake (no timeout charged).\n\n"
+            "After a timeout, you can [bold]Undo[/bold] on the next screen to pick a different team.",
+            title="Timeout — which team?",
+            border_style="cyan",
+        )
+    )
+    pick = questionary.select(
+        "Which team is calling timeout?",
+        choices=[
+            Choice(team_display_name(TeamId.RED), "red"),
+            Choice(team_display_name(TeamId.GREEN), "green"),
+            Separator("─" * 48),
+            Choice("Cancel (no timeout charged)", "cancel"),
+        ],
+        style=_TIMEOUT_PAUSE_STYLE,
+    ).ask()
+    if pick is None or pick == "cancel":
+        return None
+    return TeamId.RED if pick == "red" else TeamId.GREEN
+
+
+def _pause_after_timeout(console: Console) -> Literal["continue", "undo_pick"]:
+    console.print()
+    console.print(
+        Panel(
+            "[bold]Gameplay is paused.[/bold]\n\n"
+            "A timeout has been charged. When ready, choose [bold]Continue[/bold] to return to the game.\n\n"
+            "If you chose the wrong team, pick [bold]Undo[/bold] to remove this timeout and select Red or Green again.",
+            title="Timeout",
+            border_style="yellow",
+        )
+    )
+    choice = questionary.select(
+        "Ready to continue?",
+        choices=[
+            Choice("Continue", "continue"),
+            Separator("─" * 48),
+            Choice("Undo — wrong team, re-pick who calls timeout", "undo_pick"),
+        ],
+        style=_TIMEOUT_PAUSE_STYLE,
+    ).ask()
+    if choice == "undo_pick":
+        return "undo_pick"
+    return "continue"
+
+
+def _run_timeout_flow(session: GameSession, console: Console) -> None:
+    while True:
+        team = _pick_timeout_team(console)
+        if team is None:
+            return
+        out = session.apply(CallTimeout(team))
+        if isinstance(out, TransitionError):
+            console.print(f"[red]error:[/red] {out.message}")
+            return
+        console.print(f"[green]{out.effects_summary}[/green]")
+        action = _pause_after_timeout(console)
+        if action == "undo_pick":
+            if session.undo():
+                console.print("[yellow]Timeout undone — choose the team again.[/yellow]")
+                continue
+            console.print("[red]Could not undo the timeout.[/red]")
+            return
+        return
 
 
 def _show_history(session: GameSession, console: Console) -> None:
@@ -171,10 +298,8 @@ def run_interactive(session: GameSession) -> None:
                 _save_prompt(session, console)
             elif m == "history":
                 _show_history(session, console)
-            elif m == "timeout_red":
-                _apply(session, CallTimeout(TeamId.RED), console)
-            elif m == "timeout_green":
-                _apply(session, CallTimeout(TeamId.GREEN), console)
+            elif m == "timeout":
+                _run_timeout_flow(session, console)
             continue
 
         if pick[0] == "event":

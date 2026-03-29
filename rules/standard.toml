@@ -1,6 +1,6 @@
-# Football Darts — encoded from FootballDartsRules.pdf (2026 rules).
+# Football Darts — standard rules encoding.
 # Kickoff: ignore doubles/triples on the kick dart; yardage = dart number ×5 where noted.
-# Return-dart branches, onside kick, and some bull cases are not fully automated — see PDF.
+# Some branches (return dart, onside recovery, some bulls) are simplified in the app.
 
 [ruleset]
 version = 1
@@ -17,36 +17,39 @@ two_point = 2
 quarters = 4
 downs_per_series = 4
 timeouts_per_half = 3
+# Game clock: after this many play-count advances in a quarter, the quarter increments (0 = disable).
+plays_per_quarter = 24
 
 [throw_markers]
-kickoff_line = "Kickoff (PDF): throw from the 30-yard floor mark. Kickoffs are spotted from the 35-yard line on the scoring board. Ignore doubles and triples on the kick dart unless a return dart is required (see PDF)."
-offense_line = "Offense (PDF): throw from the 20-yard floor mark. Bounce-outs re-throw; defense then throws once from the 30-yard floor mark."
-defense_line = "Defense (PDF): throw from the 30-yard floor mark (one throw only)."
-punt_line = "Punt (PDF): state attempt first. Cannot punt on first down. Punting team from 20-yard floor mark; defense from 30 for block attempt."
-field_goal_line = "Field goal (PDF): state attempt first; round distance up to nearest 10 and stand at that floor yard mark; one dart inside the FG circle per PDF."
-pat_line = "Extra point (PDF): attempt from the 20-yard floor mark per PDF."
-two_point_line = "Two-point (PDF): offense from 20-yard floor mark, defense from 30-yard floor mark."
+coin_toss_dart_line = "Oldest player throws a dart at the dartboard, followed by the youngest. The dart closest to the center of the board elects to kick off or receive."
+kickoff_line = "Throw from the 30-yard floor mark. Kickoffs are spotted from the 35-yard line on the scoring board. Ignore doubles and triples on the kick dart unless a return dart is required."
+offense_line = "Throw from the 20-yard floor mark. Bounce-outs re-throw; defense then throws once from the 30-yard floor mark."
+defense_line = "Throw from the 30-yard floor mark (one throw only)."
+punt_line = "State the punt attempt first. Cannot punt on first down. Punting team from 20-yard floor mark; defense from 30 for block attempt."
+field_goal_line = "State the field goal attempt first; round distance up to nearest 10 and stand at that floor yard mark; one dart inside the FG circle."
+pat_line = "Attempt from the 20-yard floor mark."
+two_point_line = "Offense from 20-yard floor mark, defense from 30-yard floor mark."
 
 [kickoff]
 segment_min = 1
 segment_max = 20
 kickoff_yard_multiplier = 5
 
-# PDF Kickoffs — receiving team outcomes (simplified: no return-dart simulation for 12–9).
+# Kickoffs — receiving team outcomes.
 # 20–16: out of end zone → 1st & 10 at own 35.
 [[kickoff.bands]]
 segments = [16, 17, 18, 19, 20]
 effect = { kind = "touchback", touchback_line = 35 }
 
-# 15–13: run out vs take at 35 — engine places at 35 (PDF default spot).
+# 15–13: receiver chooses ball at own 35 or run out from goal line (run-out dart in app).
 [[kickoff.bands]]
 segments = [13, 14, 15]
-effect = { kind = "touchback", touchback_line = 35 }
+effect = { kind = "touchback", touchback_line = 35, allow_runout_choice = true }
 
-# 12–9: yards ×5 (spot = wedge × 5 as own yard, clamped). PDF requires a return dart — not modeled here.
+# 12–9: spot = wedge ×5 (own yard, clamped), then mandatory return dart.
 [[kickoff.bands]]
 segments = [9, 10, 11, 12]
-effect = { kind = "wedge_times", multiplier = 5 }
+effect = { kind = "wedge_times", multiplier = 5, requires_return_dart = true }
 
 # 8–6: short of landing / 5–1: out of bounds → 1st & 10 at own 40.
 [[kickoff.bands]]
@@ -57,18 +60,18 @@ effect = { kind = "field", yards_from_receiving_goal = 40 }
 segments = [1, 2, 3, 4, 5]
 effect = { kind = "field", yards_from_receiving_goal = 40 }
 
-# Scrimmage (PDF): wedge ×1 base; offense doubles/triples apply; defense ignores rings.
+# Scrimmage: wedge ×1 base; offense doubles/triples apply; defense ignores rings.
 [scrimmage]
 segment_min = 1
 segment_max = 20
 max_loss_yards = 10
 double_multiplier = 2
 triple_multiplier = 3
-use_pdf_segment_yards = true
+use_wedge_number_yards = true
 bull_green_segment = 20
 bull_red_segment = 18
 
-# Legacy tables (used only if use_pdf_segment_yards = false)
+# Legacy tables (used only if use_wedge_number_yards = false)
 [[scrimmage.offense_yards]]
 segments = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 yards = 4
@@ -88,7 +91,7 @@ yards = 5
 [field_goal]
 distance_round_to = 10
 max_distance_yards = 60
-# PDF: missed FG — opponent takes over at line of scrimmage +10 yards.
+# Missed FG — opponent takes over at line of scrimmage +10 yards.
 miss_spot_offset_yards = 10
 
 [pat]
@@ -98,7 +101,7 @@ pat_advances_game_clock = false
 segment_min = 1
 segment_max = 20
 
-# PDF Punts — punting team (simplified: no block/return/fake punt automation).
+# Punts — punting team (simplified: no block/return/fake punt automation).
 [[punt.bands]]
 segments = [14, 15, 16, 17, 18, 19, 20]
 effect = { kind = "wedge_times", multiplier = 3 }
@@ -107,7 +110,7 @@ effect = { kind = "wedge_times", multiplier = 3 }
 segments = [7, 8, 9, 10, 11, 12, 13]
 effect = { kind = "wedge_times", multiplier = 3 }
 
-# 1–6: 5-yard penalty (PDF): net spot uses yards ×3 minus 5, clamped.
+# 1–6: 5-yard penalty: net spot uses yards ×3 minus 5, clamped.
 [[punt.bands]]
 segments = [1, 2, 3, 4, 5, 6]
 effect = { kind = "wedge_times_penalty", multiplier = 3, penalty_yards = 5 }

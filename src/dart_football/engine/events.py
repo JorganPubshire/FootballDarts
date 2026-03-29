@@ -20,14 +20,47 @@ class ChooseKickOrReceive:
 
 
 @dataclass(frozen=True)
+class ChooseKickoffKind:
+    """Kicker chooses a normal kickoff vs an onside attempt (before the kick dart)."""
+
+    onside: bool
+
+
+@dataclass(frozen=True)
 class KickoffKick:
     segment: int
     bull: Literal["none", "green", "red"] = "none"
 
 
 @dataclass(frozen=True)
+class ChooseKickoffTouchbackOrRun:
+    """After kick segments that allow it: ball at touchback line or run out from goal line."""
+
+    take_touchback: bool
+
+
+@dataclass(frozen=True)
+class KickoffRunOutKick:
+    """Run-out dart from the receiving goal line; doubles/triples ignored for numbered wedges."""
+
+    segment: int
+    bull: Literal["none", "green", "red"] = "none"
+
+
+@dataclass(frozen=True)
+class KickoffReturnKick:
+    """Mandatory return dart from the kick spot; 13–20 uses offense double/triple multipliers."""
+
+    segment: int
+    double_ring: bool = False
+    triple_ring: bool = False
+    triple_inner: bool | None = None
+    bull: Literal["none", "green", "red"] = "none"
+
+
+@dataclass(frozen=True)
 class ScrimmageOffense:
-    """Offense dart; D/T rings multiply base yards from rules (PDF order TODO)."""
+    """Offense dart; D/T rings multiply base yards from rules."""
 
     segment: int
     double_ring: bool = False
@@ -76,7 +109,7 @@ class ChoosePatOrTwo:
 
 @dataclass(frozen=True)
 class ExtraPointOutcome:
-    """PAT dart resolved to made or miss (PDF detail TODO)."""
+    """PAT dart resolved to made or miss."""
 
     good: bool
 
@@ -90,7 +123,10 @@ class TwoPointOutcome:
 
 @dataclass(frozen=True)
 class CallTimeout:
-    """Team uses one timeout for the current half. Does not count as a play or advance the clock."""
+    """Team uses one timeout for the current half. Does not count as a play.
+
+    The next play that would advance the game play counter does not (e.g. preserve time at end of quarter).
+    """
 
     team: TeamId
 
@@ -98,7 +134,11 @@ class CallTimeout:
 Event = (
     CoinTossWinner
     | ChooseKickOrReceive
+    | ChooseKickoffKind
     | KickoffKick
+    | ChooseKickoffTouchbackOrRun
+    | KickoffRunOutKick
+    | KickoffReturnKick
     | ScrimmageOffense
     | ScrimmageDefense
     | FourthDownChoice

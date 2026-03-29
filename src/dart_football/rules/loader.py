@@ -48,7 +48,14 @@ def _parse_kickoff_bands(data: dict[str, Any]) -> tuple[KickoffBand, ...]:
             line = effect.get("touchback_line")
             if line is None:
                 raise ValueError("touchback effect needs touchback_line")
-            out.append(KickoffBand(segments=segs, kind="touchback", touchback_line=int(line)))
+            out.append(
+                KickoffBand(
+                    segments=segs,
+                    kind="touchback",
+                    touchback_line=int(line),
+                    allow_runout_choice=bool(effect.get("allow_runout_choice", False)),
+                )
+            )
         elif kind == "field":
             y = effect.get("yards_from_receiving_goal")
             if y is None:
@@ -64,7 +71,14 @@ def _parse_kickoff_bands(data: dict[str, Any]) -> tuple[KickoffBand, ...]:
             mult = effect.get("multiplier")
             if mult is None:
                 raise ValueError("wedge_times effect needs multiplier")
-            out.append(KickoffBand(segments=segs, kind="wedge_times", multiplier=int(mult)))
+            out.append(
+                KickoffBand(
+                    segments=segs,
+                    kind="wedge_times",
+                    multiplier=int(mult),
+                    requires_return_dart=bool(effect.get("requires_return_dart", False)),
+                )
+            )
         elif kind == "wedge_times_penalty":
             mult = effect.get("multiplier")
             pen = effect.get("penalty_yards")
@@ -126,6 +140,7 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
             quarters=int(st.get("quarters", structure.quarters)),
             downs_per_series=int(st.get("downs_per_series", structure.downs_per_series)),
             timeouts_per_half=int(st.get("timeouts_per_half", structure.timeouts_per_half)),
+            plays_per_quarter=int(st.get("plays_per_quarter", structure.plays_per_quarter)),
         )
 
     kickoff = KickoffRules()
@@ -147,7 +162,12 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
             max_loss_yards=int(sc.get("max_loss_yards", scrimmage.max_loss_yards)),
             double_multiplier=int(sc.get("double_multiplier", scrimmage.double_multiplier)),
             triple_multiplier=int(sc.get("triple_multiplier", scrimmage.triple_multiplier)),
-            use_pdf_segment_yards=bool(sc.get("use_pdf_segment_yards", scrimmage.use_pdf_segment_yards)),
+            use_wedge_number_yards=bool(
+                sc.get(
+                    "use_wedge_number_yards",
+                    sc.get("use_pdf_segment_yards", scrimmage.use_wedge_number_yards),
+                )
+            ),
             bull_green_segment=int(sc.get("bull_green_segment", scrimmage.bull_green_segment)),
             bull_red_segment=int(sc.get("bull_red_segment", scrimmage.bull_red_segment)),
             offense_yards=_parse_scrimmage_yard_bands("offense_yards", sc),
@@ -189,6 +209,9 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
     if "throw_markers" in raw and isinstance(raw["throw_markers"], dict):
         tm = raw["throw_markers"]
         throw_markers = ThrowMarkers(
+            coin_toss_dart_line=str(
+                tm.get("coin_toss_dart_line", throw_markers.coin_toss_dart_line)
+            ),
             kickoff_line=str(tm.get("kickoff_line", throw_markers.kickoff_line)),
             offense_line=str(tm.get("offense_line", throw_markers.offense_line)),
             defense_line=str(tm.get("defense_line", throw_markers.defense_line)),

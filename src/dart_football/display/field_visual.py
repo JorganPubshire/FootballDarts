@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from rich.text import Text
 
-from dart_football.engine.phases import Phase
+from dart_football.engine.phases import Phase, is_scrimmage_play_phase
 from dart_football.engine.state import DownAndDistance, FieldPosition, GameState
 
-# Horizontal resolution (0–100 yards maps to 0 .. WIDTH-1)
-_WIDTH = 51
-_EZ = 3  # columns at each end representing the end zone on the diagram
+# Layout: [green EZ][_FIELD_YARD_LINES yard glyphs][red EZ]. One character per integer
+# yard line from 0 (left goal) through 100 (right goal) on the playing field.
+_EZ = 3
+_FIELD_YARD_LINES = 101  # yards 0, 1, …, 100
+_TOTAL_WIDTH = _EZ + _FIELD_YARD_LINES + _EZ
+# Midfield (50): plus sign — simple midfield anchor; bold so it pops vs dim ticks.
+_MIDFIELD_MARK = "+"
 
 
 def first_down_line_yard(field: FieldPosition, downs: DownAndDistance) -> int:
@@ -23,13 +27,44 @@ def first_down_line_yard(field: FieldPosition, downs: DownAndDistance) -> int:
 
 
 def _yard_to_col(yard: int) -> int:
-    return max(0, min(_WIDTH - 1, round(yard * (_WIDTH - 1) / 100)))
+    """Map field yard line 0..100 to column index in the full row (including end zones)."""
+    y = max(0, min(100, int(round(yard))))
+    return _EZ + y
+
+
+def _append_field_axis_labels(out: Text) -> None:
+    """
+    One row (total width _TOTAL_WIDTH) aligned with the grass row: yard 0 at first
+    field column, yard 50 at midfield, yard 100 at last field column. Preceded by
+    two spaces to match the grass row indent.
+    """
+    w = _TOTAL_WIDTH
+    mid_abs = _EZ + 50
+    left_full = "Green goal ←"
+    mid = "midfield"
+    right = "→ Red goal"
+    mid_start = mid_abs - len(mid) // 2
+    right_start = w - len(right)
+    left_max = max(1, mid_start - 1)
+    left_use = left_full if len(left_full) <= left_max else left_full[:left_max]
+
+    out.append("  ", style="dim")
+    out.append(left_use, style="bold green")
+    gap1 = mid_start - len(left_use)
+    if gap1 > 0:
+        out.append(" " * gap1, style="dim")
+    out.append(mid, style="dim")
+    mid_end = mid_start + len(mid)
+    gap2 = right_start - mid_end
+    if gap2 > 0:
+        out.append(" " * gap2, style="dim")
+    out.append(right, style="bold red")
 
 
 def _grass_char_style(col: int, ch: str) -> str:
     """Color: Green's end zone left (0), Red's end zone right (100); markers in between."""
     in_green_ez = col < _EZ
-    in_red_ez = col >= _WIDTH - _EZ
+    in_red_ez = col >= _EZ + _FIELD_YARD_LINES
     if in_green_ez:
         if ch in ("●", "◆", "▼"):
             return "bold yellow on green"
@@ -42,39 +77,42 @@ def _grass_char_style(col: int, ch: str) -> str:
         return "bold yellow"
     if ch == "▼":
         return "bold cyan"
-    if ch in ("│", "╋"):
+    if ch == _MIDFIELD_MARK:
+        return "bold white"
+    y_field = col - _EZ
+    if ch == "|" and 0 <= y_field < _FIELD_YARD_LINES:
+        if y_field % 10 == 0:
+            return "bold white"
         return "dim"
     return "dim"
-
-
-def _phase_shows_scrimmage_downs(phase: Phase | None) -> bool:
-    """Kickoff (and similar) are not offensive series — no 1st-down / down & distance on the diagram."""
-    if phase is None:
-        return True
-    return phase not in (Phase.KICKOFF_KICK, Phase.ONSIDE_KICK)
 
 
 def format_field_visual(state: GameState, *, phase: Phase | None = None) -> Text:
     """
     Green goal line at 0 (left), Red at 100 (right).
-    Endzones, 10-yard ticks, midfield, ball (LOS), first-down marker (when in a scrimmage phase).
-    Returns Rich Text with team-colored end zones.
+    End zones, then yard ticks: | on 5s (dim) and 10s (bold white), + at 50, · elsewhere,
+    ball (LOS), first-down marker (only in scrimmage phases).
     """
     f = state.field
     d = state.downs
     los = f.scrimmage_line
-    show_scrimmage_downs = _phase_shows_scrimmage_downs(phase)
+    show_scrimmage_downs = is_scrimmage_play_phase(phase)
 
-    row = ["·"] * _WIDTH
+    row = ["·"] * _TOTAL_WIDTH
     for i in range(_EZ):
         row[i] = "░"
-        row[_WIDTH - 1 - i] = "░"
-    for m in range(10, 100, 10):
-        c = _yard_to_col(m)
-        row[c] = "│"
-    mid = _yard_to_col(50)
-    if row[mid] == "·":
-        row[mid] = "╋"
+        row[_TOTAL_WIDTH - 1 - i] = "░"
+
+    for y in range(_FIELD_YARD_LINES):
+        col = _EZ + y
+        if y == 50:
+            row[col] = _MIDFIELD_MARK
+        elif y % 10 == 0:
+            row[col] = "|"
+        elif y % 10 == 5:
+            row[col] = "|"
+        else:
+            row[col] = "·"
 
     los_c = _yard_to_col(los)
     if show_scrimmage_downs:
@@ -84,19 +122,14 @@ def format_field_visual(state: GameState, *, phase: Phase | None = None) -> Text
             row[los_c] = "◆"
         else:
             row[los_c] = "●"
-            if row[fd_c] in ("·", "│", "╋"):
-                row[fd_c] = "▼"
-            else:
-                row[fd_c] = "▼"
+            row[fd_c] = "▼"
     else:
         row[los_c] = "●"
 
     out = Text()
     out.append("Field\n", style="dim bold")
-    out.append("Green goal (0) ←", style="bold green")
-    out.append("·" * 12 + " midfield " + "·" * 12, style="dim")
-    out.append("→ Red goal (100)\n", style="bold red")
-    out.append("  ")
+    _append_field_axis_labels(out)
+    out.append("\n  ", style="dim")
     for i, ch in enumerate(row):
         out.append(ch, style=_grass_char_style(i, ch))
     if show_scrimmage_downs:
@@ -105,6 +138,6 @@ def format_field_visual(state: GameState, *, phase: Phase | None = None) -> Text
             f"\n  ● LOS {los} yd   ·   ▼/◆ 1st-down line {fd} yd   ·   {d.down} & {d.to_go}"
         )
     else:
-        caption = f"\n  ● Kickoff spot {los} yd   ·   no offensive down/distance (kicking team)"
+        caption = f"\n  ● LOS {los} yd   ·   no scrimmage down & distance"
     out.append(caption, style="dim")
     return out
