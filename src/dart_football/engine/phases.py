@@ -14,10 +14,14 @@ class Phase(Enum):
     KICKOFF_RETURN_DART = "kickoff_return_dart"
     SCRIMMAGE_OFFENSE = "scrimmage_offense"
     SCRIMMAGE_DEFENSE = "scrimmage_defense"
+    SCRIMMAGE_STRIP_DART = "scrimmage_strip_dart"
     FOURTH_DOWN_DECISION = "fourth_down_decision"
-    FIELD_GOAL_ATTEMPT = "field_goal_attempt"
+    FIELD_GOAL_OFFENSE_DART = "field_goal_offense_dart"
+    FIELD_GOAL_GREEN_CHOICE = "field_goal_green_choice"
+    FIELD_GOAL_FAKE_OFFENSE = "field_goal_fake_offense"
+    FIELD_GOAL_DEFENSE = "field_goal_defense"
     PUNT_ATTEMPT = "punt_attempt"
-    PAT_OR_TWO_DECISION = "pat_or_two_decision"
+    AFTER_TOUCHDOWN_CHOICE = "after_touchdown_choice"
     EXTRA_POINT_ATTEMPT = "extra_point_attempt"
     TWO_POINT_ATTEMPT = "two_point_attempt"
     SAFETY_SEQUENCE = "safety_sequence"
@@ -33,5 +37,20 @@ def is_scrimmage_play_phase(phase: Phase | None) -> bool:
     return phase in (
         Phase.SCRIMMAGE_OFFENSE,
         Phase.SCRIMMAGE_DEFENSE,
+        Phase.SCRIMMAGE_STRIP_DART,
         Phase.FOURTH_DOWN_DECISION,
     )
+
+
+# Saved sessions may use older phase string values.
+_PHASE_VALUE_ALIASES: dict[str, Phase] = {
+    "pat_or_two_decision": Phase.AFTER_TOUCHDOWN_CHOICE,
+    "field_goal_attempt": Phase.FIELD_GOAL_OFFENSE_DART,
+}
+
+
+def phase_from_stored(value: str) -> Phase:
+    p = _PHASE_VALUE_ALIASES.get(value)
+    if p is not None:
+        return p
+    return Phase(value)

@@ -45,6 +45,8 @@ def test_correct_kickoff(rules, rules_path: Path, tmp_path: Path) -> None:
     sess.save(p)
     data = json.loads(p.read_text(encoding="utf-8"))
     assert data["head"] == 4
+    assert data.get("large_field") is False
     loaded = GameSession.load(p, lambda pth: load_rules_path(Path(pth)))
+    assert loaded.large_field is False
     assert loaded.head == 4
     assert loaded.current_state_phase()[0].field.scrimmage_line == 40

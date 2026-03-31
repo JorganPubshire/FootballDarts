@@ -91,6 +91,12 @@ class GameState:
     #: When awaiting run_or_spot: own-yard line for the touchback option (e.g. 35).
     kickoff_pending_touchback_line: int | None = None
     declared_fg_attempt: bool = False
+    #: Line of scrimmage when the FG try was declared (for blocks / miss spot).
+    fg_snap_field: FieldPosition | None = None
+    #: After offense FG dart (before defense): ``none`` | ``good`` | ``miss`` | ``fake_resolved``.
+    fg_pending_outcome: str = "none"
+    #: After fake yardage: yard line (0–100) where a new first down would be earned.
+    fg_fake_first_down_line: int | None = None
     declared_punt: bool = False
     declared_onside: bool = False
     #: False while waiting for ChooseKickoffKind; True once kicker picked regular/onside.
@@ -99,7 +105,15 @@ class GameState:
     #: After a timeout, the next play that would advance the game play counter does not.
     skip_next_play_clock_bump: bool = False
     scrimmage_pending_offense_yards: int | None = None
+    #: For wedge-number rules: ``none`` | ``wedge`` | ``green`` | ``red`` — how offense dart resolves defense outcomes.
+    scrimmage_pending_offense_kind: str = "none"
+    #: Effective wedge 1..20 for board-color matching (strip dart vs offense wedge).
+    scrimmage_pending_offense_eff_segment: int | None = None
     last_touchdown_team: TeamId | None = None
+    #: Team that must kick after a safety (the team that was on offense); cleared after kickoff is set up.
+    safety_pending_kicker: TeamId | None = None
+    #: 0 = regulation; 1+ = overtime period index (used for sudden-death and UI).
+    overtime_period: int = 0
 
     @staticmethod
     def new_game(

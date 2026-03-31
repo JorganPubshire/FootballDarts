@@ -16,3 +16,4 @@ def test_load_standard(rules_path: Path) -> None:
     assert "kickoff" in r.throw_markers.kickoff_line.lower()
     assert "20-yard" in r.throw_markers.offense_line.lower()
     assert "30-yard" in r.throw_markers.defense_line.lower()
+    assert r.safety.free_kick_own_yard == 20

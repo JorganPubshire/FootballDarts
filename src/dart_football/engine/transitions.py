@@ -6,13 +6,18 @@ from typing import Literal
 from dart_football.display.formatting import format_possession_summary, yards_from_own_goal
 from dart_football.engine.events import (
     CallTimeout,
+    ConfirmSafetyKickoff,
+    ChooseFieldGoalAfterGreen,
     ChooseKickoffKind,
     ChooseKickoffTouchbackOrRun,
     ChooseKickOrReceive,
-    ChoosePatOrTwo,
+    ChooseExtraPointOrTwo,
     CoinTossWinner,
     Event,
     ExtraPointOutcome,
+    FieldGoalDefenseDart,
+    FieldGoalFakeOffenseDart,
+    FieldGoalOffenseDart,
     FieldGoalOutcome,
     FourthDownChoice,
     KickoffKick,
@@ -21,6 +26,7 @@ from dart_football.engine.events import (
     PuntKick,
     ScrimmageDefense,
     ScrimmageOffense,
+    ScrimmageStripDart,
     TwoPointOutcome,
 )
 from dart_football.engine.phases import Phase
@@ -125,6 +131,13 @@ def _advance_clock_for_play(state: GameState, rules: RuleSet) -> tuple[GameClock
     return _bump_clock(state, rules), state
 
 
+def _kickoff_resolve_state(state: GameState) -> GameState:
+    """Kickoffs are not counted plays; still consume skip_next_play_clock_bump if set (timeout rule)."""
+    if state.skip_next_play_clock_bump:
+        return replace(state, skip_next_play_clock_bump=False)
+    return state
+
+
 def _call_timeout(state: GameState, phase: Phase, team: TeamId) -> TransitionOk | TransitionError:
     """Use one timeout for the current half (Q1–2 vs Q3+). Does not bump clock."""
     q = state.clock.quarter
@@ -190,6 +203,79 @@ def _is_touchdown(field: FieldPosition) -> bool:
     return field.scrimmage_line <= 0
 
 
+def _is_safety(field: FieldPosition) -> bool:
+    """Offense is down in their own end zone (ball spotted on or past own goal)."""
+    if field.goal_yard == 100:
+        return field.scrimmage_line <= 0
+    return field.scrimmage_line >= 100
+
+
+def _safety_free_kick_tee_field(kicker: TeamId, rules: RuleSet) -> FieldPosition:
+    y = rules.safety.free_kick_own_yard
+    y = max(1, min(99, y))
+    return _field_spot_from_own_yard(kicker, y)
+
+
+def _setup_safety_free_kick(state: GameState, kicker: TeamId, receiver: TeamId, rules: RuleSet) -> GameState:
+    fp = _safety_free_kick_tee_field(kicker, rules)
+    downs = DownAndDistance(1, 10, fp.scrimmage_line)
+    return replace(
+        state,
+        last_touchdown_team=None,
+        kickoff_kicker=kicker,
+        kickoff_receiver=receiver,
+        offense=kicker,
+        field=fp,
+        downs=downs,
+        declared_fg_attempt=False,
+        declared_punt=False,
+        declared_onside=False,
+        kickoff_type_selected=False,
+        scrimmage_pending_offense_yards=None,
+        scrimmage_pending_offense_kind="none",
+        scrimmage_pending_offense_eff_segment=None,
+        kickoff_awaiting="none",
+        kickoff_pending_touchback_line=None,
+        fg_snap_field=None,
+        fg_pending_outcome="none",
+        fg_fake_first_down_line=None,
+    )
+
+
+def _maybe_first_score_ot_game_over(ok: TransitionOk, rules: RuleSet) -> TransitionOk:
+    st = ok.state
+    if st.overtime_period <= 0:
+        return ok
+    if rules.overtime.template != "first_score":
+        return ok
+    if ok.phase != Phase.KICKOFF_KICK:
+        return ok
+    if st.scores.red == st.scores.green:
+        return ok
+    return TransitionOk(st, Phase.GAME_OVER, f"{ok.effects_summary} | Game over (overtime)")
+
+
+def _maybe_regulation_to_overtime_or_final(prev_quarter: int, ok: TransitionOk, rules: RuleSet) -> TransitionOk:
+    st = ok.state
+    if st.overtime_period > 0:
+        return ok
+    qc = rules.structure.quarters
+    if prev_quarter != qc or st.clock.quarter != qc + 1:
+        return ok
+    if st.scores.red != st.scores.green:
+        return TransitionOk(st, Phase.GAME_OVER, f"{ok.effects_summary} | Game over (regulation)")
+    if not rules.overtime.enabled:
+        return TransitionOk(st, Phase.GAME_OVER, f"{ok.effects_summary} | Game over (tie)")
+    s_ot = replace(st, overtime_period=1, coin_toss_winner=None)
+    return TransitionOk(s_ot, Phase.OVERTIME_START, f"{ok.effects_summary} | Overtime — coin toss")
+
+
+def _post_process_transition_ok(prev_quarter: int, ok: TransitionOk, rules: RuleSet) -> TransitionOk:
+    ok = _maybe_regulation_to_overtime_or_final(prev_quarter, ok, rules)
+    ok = _maybe_first_score_ot_game_over(ok, rules)
+    return ok
+
+
 def _state_after_td(state: GameState, scoring: TeamId, rules: RuleSet) -> GameState:
     return replace(
         state,
@@ -203,8 +289,14 @@ def _state_after_td(state: GameState, scoring: TeamId, rules: RuleSet) -> GameSt
         kickoff_awaiting="none",
         kickoff_pending_touchback_line=None,
         scrimmage_pending_offense_yards=None,
+        scrimmage_pending_offense_kind="none",
+        scrimmage_pending_offense_eff_segment=None,
         declared_fg_attempt=False,
         declared_punt=False,
+        fg_snap_field=None,
+        fg_pending_outcome="none",
+        fg_fake_first_down_line=None,
+        safety_pending_kicker=None,
     )
 
 
@@ -225,8 +317,14 @@ def _setup_kickoff_after_score(state: GameState, scoring: TeamId, rules: RuleSet
         declared_onside=False,
         kickoff_type_selected=False,
         scrimmage_pending_offense_yards=None,
+        scrimmage_pending_offense_kind="none",
+        scrimmage_pending_offense_eff_segment=None,
         kickoff_awaiting="none",
         kickoff_pending_touchback_line=None,
+        safety_pending_kicker=None,
+        fg_snap_field=None,
+        fg_pending_outcome="none",
+        fg_fake_first_down_line=None,
     )
 
 
@@ -244,14 +342,14 @@ def _finish_kickoff_to_scrimmage(
     field: FieldPosition,
     summary: str,
 ) -> TransitionOk:
-    new_clock, st = _advance_clock_for_play(state, rules)
+    st = _kickoff_resolve_state(state)
     downs = DownAndDistance(down=1, to_go=10, los_yard=field.scrimmage_line)
     s = replace(
         st,
         offense=receiver,
         field=field,
         downs=downs,
-        clock=new_clock,
+        clock=st.clock,
         kickoff_kicker=None,
         kickoff_receiver=None,
         kickoff_awaiting="none",
@@ -273,10 +371,9 @@ def _finish_kickoff_return_touchdown(
     rules: RuleSet,
     summary: str,
 ) -> TransitionOk:
-    new_clock, st = _advance_clock_for_play(state, rules)
+    st = _kickoff_resolve_state(state)
     s2 = replace(
         st,
-        clock=new_clock,
         kickoff_kicker=None,
         kickoff_receiver=None,
         kickoff_awaiting="none",
@@ -287,7 +384,7 @@ def _finish_kickoff_return_touchdown(
     s_td = _state_after_td(s2, receiver, rules)
     return TransitionOk(
         s_td,
-        Phase.PAT_OR_TWO_DECISION,
+        Phase.AFTER_TOUCHDOWN_CHOICE,
         f"{summary} — TD {receiver.value}! (+{rules.scoring.touchdown})",
     )
 
@@ -343,7 +440,7 @@ def _apply_kickoff_dart(
     label = "Onside kick" if onside_attempt else "Kickoff"
 
     if event.bull == "green":
-        new_clock, st = _advance_clock_for_play(state, rules)
+        st = _kickoff_resolve_state(state)
         field = _kickoff_green_bull_field(kicker)
         downs = DownAndDistance(down=1, to_go=10, los_yard=field.scrimmage_line)
         s = replace(
@@ -351,7 +448,7 @@ def _apply_kickoff_dart(
             offense=kicker,
             field=field,
             downs=downs,
-            clock=new_clock,
+            clock=st.clock,
             kickoff_kicker=None,
             kickoff_receiver=None,
             kickoff_awaiting="none",
@@ -367,10 +464,9 @@ def _apply_kickoff_dart(
         )
 
     if event.bull == "red":
-        new_clock, st = _advance_clock_for_play(state, rules)
+        st = _kickoff_resolve_state(state)
         s2 = replace(
             st,
-            clock=new_clock,
             kickoff_kicker=None,
             kickoff_receiver=None,
             kickoff_awaiting="none",
@@ -380,7 +476,7 @@ def _apply_kickoff_dart(
         s_td = _state_after_td(s2, kicker, rules)
         return TransitionOk(
             s_td,
-            Phase.PAT_OR_TWO_DECISION,
+            Phase.AFTER_TOUCHDOWN_CHOICE,
             f"{label} red bull: receiving fumble — touchdown {kicker.value} (+{rules.scoring.touchdown})",
         )
 
@@ -431,7 +527,7 @@ def _apply_kickoff_dart(
             f"{label} wedge {seg} — return dart from kick spot ({format_possession_summary(s)})",
         )
 
-    new_clock, st = _advance_clock_for_play(state, rules)
+    st = _kickoff_resolve_state(state)
     field = _field_from_spot_band(receiver, band, seg)
     downs = DownAndDistance(down=1, to_go=10, los_yard=field.scrimmage_line)
     s = replace(
@@ -439,7 +535,7 @@ def _apply_kickoff_dart(
         offense=receiver,
         field=field,
         downs=downs,
-        clock=new_clock,
+        clock=st.clock,
         kickoff_kicker=None,
         kickoff_receiver=None,
         kickoff_awaiting="none",
@@ -462,6 +558,140 @@ def _effective_segment_bull(
     if bull == "red":
         return rules.scrimmage.bull_red_segment
     return segment
+
+
+# Standard dartboard: clockwise from top; adjacent wedges alternate black/cream.
+_WEDGE_ORDER_CLOCKWISE = (
+    20,
+    1,
+    18,
+    4,
+    13,
+    6,
+    10,
+    15,
+    2,
+    17,
+    3,
+    19,
+    7,
+    16,
+    8,
+    11,
+    14,
+    9,
+    12,
+    5,
+)
+
+
+def _wedge_board_color_parity(segment: int) -> int:
+    return _WEDGE_ORDER_CLOCKWISE.index(segment) % 2
+
+
+def _wedge_board_colors_match(offense_eff: int, defense_segment: int) -> bool:
+    return _wedge_board_color_parity(offense_eff) == _wedge_board_color_parity(defense_segment)
+
+
+def _defensive_touchdown_after_offense_yards(
+    state: GameState, rules: RuleSet, off_yards: int, summary_prefix: str
+) -> TransitionOk:
+    new_clock, st = _advance_clock_for_play(state, rules)
+    s_inter = replace(
+        st,
+        clock=new_clock,
+        scrimmage_pending_offense_yards=None,
+        scrimmage_pending_offense_kind="none",
+        scrimmage_pending_offense_eff_segment=None,
+    )
+    scoring = _other(state.offense)
+    s_td = _state_after_td(s_inter, scoring, rules)
+    return TransitionOk(
+        s_td,
+        Phase.AFTER_TOUCHDOWN_CHOICE,
+        f"{summary_prefix} — defensive TD {scoring.value}! (+{rules.scoring.touchdown})",
+    )
+
+
+def _no_gain_advance_down(
+    state_after_clock: GameState,
+    state_before_play: GameState,
+    field: FieldPosition,
+    summary: str,
+) -> TransitionOk:
+    down = state_before_play.downs.down + 1
+    to_go = state_before_play.downs.to_go
+    if down > 4:
+        s_to = _turnover_on_downs_state(state_after_clock, field)
+        return TransitionOk(
+            s_to,
+            Phase.SCRIMMAGE_OFFENSE,
+            f"{summary} | turnover on downs",
+        )
+    downs = DownAndDistance(down, to_go, field.scrimmage_line)
+    s_final = replace(state_after_clock, downs=downs, field=field)
+    next_phase = Phase.FOURTH_DOWN_DECISION if down == 4 else Phase.SCRIMMAGE_OFFENSE
+    return TransitionOk(s_final, next_phase, f"{summary} | down {down} & {to_go}")
+
+
+def _finish_scrimmage_net_play(
+    state_before: GameState,
+    rules: RuleSet,
+    s_inter: GameState,
+    new_field: FieldPosition,
+    off_yards: int,
+    def_yards: int,
+    net: int,
+    dn: str,
+) -> TransitionOk:
+    if _is_touchdown(new_field):
+        scoring = state_before.offense
+        s_td = _state_after_td(s_inter, scoring, rules)
+        return TransitionOk(
+            s_td,
+            Phase.AFTER_TOUCHDOWN_CHOICE,
+            f"Play: off {off_yards} vs def {def_yards}{dn} → net {net} yds | TD {scoring.value}! (+{rules.scoring.touchdown})",
+        )
+    if _is_safety(new_field):
+        defense_scored = _other(state_before.offense)
+        s_safe = replace(
+            s_inter,
+            field=new_field,
+            downs=DownAndDistance(1, min(10, _yards_to_goal_line(new_field)), new_field.scrimmage_line),
+            scores=s_inter.scores.add(defense_scored, rules.scoring.safety),
+            safety_pending_kicker=state_before.offense,
+            scrimmage_pending_offense_yards=None,
+            scrimmage_pending_offense_kind="none",
+            scrimmage_pending_offense_eff_segment=None,
+        )
+        return TransitionOk(
+            s_safe,
+            Phase.SAFETY_SEQUENCE,
+            f"Safety! {defense_scored.value} +{rules.scoring.safety} — confirm free kick when ready",
+        )
+    dist = _yards_to_goal_line(new_field)
+    to_go_before = state_before.downs.to_go
+    if net >= to_go_before:
+        down = 1
+        to_go = min(10, dist)
+    else:
+        down = state_before.downs.down + 1
+        to_go = to_go_before - net
+    if down > 4:
+        s_to = _turnover_on_downs_state(s_inter, new_field)
+        return TransitionOk(
+            s_to,
+            Phase.SCRIMMAGE_OFFENSE,
+            f"Play: net {net} yds{dn} | turnover on downs",
+        )
+    downs = DownAndDistance(down, to_go, new_field.scrimmage_line)
+    s_final = replace(s_inter, downs=downs)
+    next_phase = Phase.FOURTH_DOWN_DECISION if down == 4 else Phase.SCRIMMAGE_OFFENSE
+    return TransitionOk(
+        s_final,
+        next_phase,
+        f"Play: off {off_yards} vs def {def_yards}{dn} → net {net} yds | down {down} & {to_go}",
+    )
 
 
 def _defense_ring_note(event: ScrimmageDefense) -> str:
@@ -517,7 +747,67 @@ def _field_after_missed_field_goal(state: GameState, rules: RuleSet) -> GameStat
         declared_fg_attempt=False,
         declared_punt=False,
         scrimmage_pending_offense_yards=None,
+        scrimmage_pending_offense_kind="none",
+        scrimmage_pending_offense_eff_segment=None,
+        fg_snap_field=None,
+        fg_pending_outcome="none",
+        fg_fake_first_down_line=None,
+        safety_pending_kicker=None,
     )
+
+
+def _fg_clear_sequence_fields() -> dict:
+    return {
+        "fg_snap_field": None,
+        "fg_pending_outcome": "none",
+        "fg_fake_first_down_line": None,
+        "declared_fg_attempt": False,
+        "safety_pending_kicker": None,
+    }
+
+
+def _team_fg_board_parity(team: TeamId) -> int:
+    return 0 if team is TeamId.RED else 1
+
+
+def _first_down_line_yard(field: FieldPosition, downs: DownAndDistance) -> int:
+    s, g = field.scrimmage_line, field.goal_yard
+    t = downs.to_go
+    if g == 100:
+        return min(100, s + t)
+    return max(0, s - t)
+
+
+def _fake_fg_defense_green_field(field: FieldPosition, first_down_line: int) -> FieldPosition:
+    g = field.goal_yard
+    if g == 100:
+        one_short = max(0, first_down_line - 1)
+        own_eleven = 11
+        s_new = min(one_short, own_eleven)
+    else:
+        one_short = min(100, first_down_line + 1)
+        own_eleven = 89
+        s_new = max(one_short, own_eleven)
+    return FieldPosition(s_new, g)
+
+
+def _field_goal_fake_yards(event: FieldGoalFakeOffenseDart, rules: RuleSet) -> int | None:
+    sc = rules.scrimmage
+    eff = event.segment if event.bull == "none" else _effective_segment_bull(event.segment, event.bull, rules)
+    if eff < sc.segment_min or eff > sc.segment_max:
+        return None
+    if not sc.use_wedge_number_yards:
+        return None
+    if event.bull == "red":
+        return 0
+    if event.bull == "green":
+        return eff
+    mult = 1
+    if event.triple_ring:
+        mult *= sc.triple_multiplier
+    if event.double_ring:
+        mult *= sc.double_multiplier
+    return eff * mult
 
 
 def _defensive_takeover_at_spot(state: GameState, spot: FieldPosition) -> GameState:
@@ -533,8 +823,11 @@ def _defensive_takeover_at_spot(state: GameState, spot: FieldPosition) -> GameSt
         field=nf,
         downs=downs,
         scrimmage_pending_offense_yards=None,
+        scrimmage_pending_offense_kind="none",
+        scrimmage_pending_offense_eff_segment=None,
         declared_fg_attempt=False,
         declared_punt=False,
+        safety_pending_kicker=None,
     )
 
 
@@ -542,18 +835,12 @@ def _turnover_on_downs_state(state: GameState, field: FieldPosition) -> GameStat
     return _defensive_takeover_at_spot(state, field)
 
 
-def transition(
+def _transition_core(
     state: GameState,
     phase: Phase,
     event: Event,
     rules: RuleSet,
 ) -> TransitionOk | TransitionError:
-    if phase in (Phase.SAFETY_SEQUENCE, Phase.OVERTIME_START):
-        return TransitionError(
-            "this phase is not implemented in the app yet",
-            (),
-        )
-
     if isinstance(event, CallTimeout):
         if phase in (Phase.PRE_GAME_COIN_TOSS, Phase.GAME_OVER):
             return TransitionError("cannot call timeout in this phase", ())
@@ -732,9 +1019,12 @@ def transition(
             )
         return _finish_kickoff_to_scrimmage(state, rules, recv, nf, f"Return +{net} yd")
 
-    if phase is Phase.PAT_OR_TWO_DECISION:
-        if not isinstance(event, ChoosePatOrTwo):
-            return TransitionError("expected PAT or 2-pt choice", ("ChoosePatOrTwo",))
+    if phase is Phase.AFTER_TOUCHDOWN_CHOICE:
+        if not isinstance(event, ChooseExtraPointOrTwo):
+            return TransitionError(
+                "expected extra point or two-point choice",
+                ("ChooseExtraPointOrTwo",),
+            )
         if state.last_touchdown_team is None:
             return TransitionError("internal: missing last_touchdown_team", ())
         if event.extra_point:
@@ -748,11 +1038,11 @@ def transition(
             return TransitionError("internal: missing last_touchdown_team", ())
         scoring = state.last_touchdown_team
         s2 = state
-        summary = "PAT no good"
+        summary = "Extra point no good"
         if event.good:
-            s2 = replace(s2, scores=s2.scores.add(scoring, rules.scoring.pat))
-            summary = f"PAT good (+{rules.scoring.pat})"
-        if rules.pat.pat_advances_game_clock:
+            s2 = replace(s2, scores=s2.scores.add(scoring, rules.scoring.extra_point))
+            summary = f"Extra point good (+{rules.scoring.extra_point})"
+        if rules.after_touchdown.extra_point_attempt_advances_game_clock:
             nc, st = _advance_clock_for_play(s2, rules)
             s2 = replace(st, clock=nc)
         s3 = _setup_kickoff_after_score(s2, scoring, rules)
@@ -797,61 +1087,326 @@ def transition(
                     "60-yard field goals only from your own 40 to 49 yard line",
                     ("FourthDownChoice",),
                 )
+            snap = state.field
             return TransitionOk(
-                replace(state, declared_fg_attempt=True),
-                Phase.FIELD_GOAL_ATTEMPT,
+                replace(
+                    state,
+                    declared_fg_attempt=True,
+                    fg_snap_field=snap,
+                    fg_pending_outcome="none",
+                    fg_fake_first_down_line=None,
+                ),
+                Phase.FIELD_GOAL_OFFENSE_DART,
                 "Field goal attempt",
             )
         return TransitionError("invalid fourth down kind", ())
 
-    if phase is Phase.FIELD_GOAL_ATTEMPT:
-        if not isinstance(event, FieldGoalOutcome):
-            return TransitionError("expected field goal outcome", ("FieldGoalOutcome",))
-        scoring = state.offense
-        dist = _yards_to_goal_line(state.field)
-        if event.kind == "good" and dist > rules.field_goal.max_distance_yards:
+    def _fg_kick_range_err(st: GameState) -> TransitionError | None:
+        dist = _yards_to_goal_line(st.field)
+        if dist > rules.field_goal.max_distance_yards:
             return TransitionError(
                 f"FG distance {dist} yd exceeds max {rules.field_goal.max_distance_yards}",
-                ("FieldGoalOutcome",),
+                ("FieldGoalOffenseDart", "ChooseFieldGoalAfterGreen"),
             )
-        if event.kind == "good":
-            if not _sixty_yard_fg_line_ok(state):
+        if not _sixty_yard_fg_line_ok(st):
+            return TransitionError(
+                "60-yard field goals only from your own 40 to 49 yard line",
+                ("FieldGoalOffenseDart", "ChooseFieldGoalAfterGreen"),
+            )
+        return None
+
+    if phase is Phase.FIELD_GOAL_OFFENSE_DART:
+        if not state.declared_fg_attempt:
+            return TransitionError("internal: field goal not declared", ())
+        snap = state.fg_snap_field if state.fg_snap_field is not None else state.field
+        st0 = replace(state, field=snap, fg_snap_field=snap)
+
+        if isinstance(event, FieldGoalOutcome):
+            scoring = st0.offense
+            dist = _yards_to_goal_line(st0.field)
+            if event.kind == "good" and dist > rules.field_goal.max_distance_yards:
                 return TransitionError(
-                    "60-yard field goals only from your own 40 to 49 yard line",
+                    f"FG distance {dist} yd exceeds max {rules.field_goal.max_distance_yards}",
                     ("FieldGoalOutcome",),
                 )
-            s2 = replace(state, scores=state.scores.add(scoring, rules.scoring.field_goal))
-            nc, st = _advance_clock_for_play(s2, rules)
-            s2 = replace(st, clock=nc)
-            s3 = _setup_kickoff_after_score(s2, scoring, rules)
+            if event.kind == "good":
+                if not _sixty_yard_fg_line_ok(st0):
+                    return TransitionError(
+                        "60-yard field goals only from your own 40 to 49 yard line",
+                        ("FieldGoalOutcome",),
+                    )
+                s2 = replace(
+                    st0,
+                    scores=st0.scores.add(scoring, rules.scoring.field_goal),
+                    **_fg_clear_sequence_fields(),
+                )
+                nc, st = _advance_clock_for_play(s2, rules)
+                s2 = replace(st, clock=nc)
+                s3 = _setup_kickoff_after_score(s2, scoring, rules)
+                return TransitionOk(
+                    s3,
+                    Phase.KICKOFF_KICK,
+                    f"Field goal good (+{rules.scoring.field_goal}) — kickoff next",
+                )
+            s_to = _field_after_missed_field_goal(
+                replace(st0, **_fg_clear_sequence_fields()),
+                rules,
+            )
+            nc, st = _advance_clock_for_play(s_to, rules)
+            s_to = replace(st, clock=nc)
+            return TransitionOk(
+                s_to,
+                Phase.SCRIMMAGE_OFFENSE,
+                f"Field goal {event.kind} — opponent ball at previous LOS +{rules.field_goal.miss_spot_offset_yards} yd",
+            )
+
+        if not isinstance(event, FieldGoalOffenseDart):
+            return TransitionError(
+                "expected field goal offense dart (or legacy outcome)",
+                ("FieldGoalOffenseDart", "FieldGoalOutcome"),
+            )
+        sc = rules.scrimmage
+        eff = event.segment
+        if eff < sc.segment_min or eff > sc.segment_max:
+            return TransitionError(
+                f"segment must be {sc.segment_min}..{sc.segment_max}",
+                ("FieldGoalOffenseDart",),
+            )
+        z = event.zone
+        if z == "red":
+            new_clock, st = _advance_clock_for_play(st0, rules)
+            scoring = st0.offense
+            s2 = replace(st, clock=new_clock, **_fg_clear_sequence_fields())
+            s_td = _state_after_td(s2, scoring, rules)
+            return TransitionOk(
+                s_td,
+                Phase.AFTER_TOUCHDOWN_CHOICE,
+                f"Field goal try — red bull: TD {scoring.value}! (+{rules.scoring.touchdown})",
+            )
+        if z == "green":
+            return TransitionOk(
+                replace(st0, fg_snap_field=snap),
+                Phase.FIELD_GOAL_GREEN_CHOICE,
+                "Green bull — choose real field goal or fake",
+            )
+        re = _fg_kick_range_err(st0)
+        if re is not None:
+            return re
+        if z == "inner_triple":
+            return TransitionOk(
+                replace(st0, fg_snap_field=snap, fg_pending_outcome="good"),
+                Phase.FIELD_GOAL_DEFENSE,
+                "FG inside triple ring — would be good; defense may block",
+            )
+        if z == "outside_triples":
+            return TransitionOk(
+                replace(st0, fg_snap_field=snap, fg_pending_outcome="miss"),
+                Phase.FIELD_GOAL_DEFENSE,
+                "FG outside triple ring — would miss; defense may block",
+            )
+        if z == "triple_ring":
+            same = _wedge_board_color_parity(eff) == _team_fg_board_parity(st0.offense)
+            pending = "good" if same else "miss"
+            return TransitionOk(
+                replace(st0, fg_snap_field=snap, fg_pending_outcome=pending),
+                Phase.FIELD_GOAL_DEFENSE,
+                f"FG on triple ring — would be {'good' if same else 'miss'}; defense may block",
+            )
+        return TransitionError("internal: unknown FG zone", ())
+
+    if phase is Phase.FIELD_GOAL_GREEN_CHOICE:
+        if not isinstance(event, ChooseFieldGoalAfterGreen):
+            return TransitionError("expected real kick vs fake choice", ("ChooseFieldGoalAfterGreen",))
+        snap = state.fg_snap_field
+        if snap is None:
+            return TransitionError("internal: missing FG snap", ())
+        st0 = replace(state, field=snap)
+        if event.real_kick:
+            re = _fg_kick_range_err(st0)
+            if re is not None:
+                return re
+            return TransitionOk(
+                replace(st0, fg_pending_outcome="good"),
+                Phase.FIELD_GOAL_DEFENSE,
+                "Real field goal — defense may block",
+            )
+        return TransitionOk(
+            replace(st0, fg_pending_outcome="none", fg_fake_first_down_line=None),
+            Phase.FIELD_GOAL_FAKE_OFFENSE,
+            "Fake field goal — offense yardage dart (no defense on this throw)",
+        )
+
+    if phase is Phase.FIELD_GOAL_FAKE_OFFENSE:
+        if not isinstance(event, FieldGoalFakeOffenseDart):
+            return TransitionError("expected fake FG offense dart", ("FieldGoalFakeOffenseDart",))
+        snap = state.fg_snap_field
+        if snap is None:
+            return TransitionError("internal: missing FG snap", ())
+        yds = _field_goal_fake_yards(event, rules)
+        if yds is None:
+            return TransitionError(
+                "fake FG uses wedge-number scrimmage rules (segment range / settings)",
+                ("FieldGoalFakeOffenseDart",),
+            )
+        new_field = _advance_field(snap, yds)
+        dist = _yards_to_goal_line(new_field)
+        to_go = min(10, dist)
+        downs = DownAndDistance(1, to_go, new_field.scrimmage_line)
+        fd_line = _first_down_line_yard(new_field, downs)
+        return TransitionOk(
+            replace(
+                state,
+                field=new_field,
+                downs=downs,
+                fg_pending_outcome="fake_resolved",
+                fg_fake_first_down_line=fd_line,
+            ),
+            Phase.FIELD_GOAL_DEFENSE,
+            f"Fake FG +{yds} yds — 1st & {to_go}; defense may affect spot",
+        )
+
+    if phase is Phase.FIELD_GOAL_DEFENSE:
+        if not isinstance(event, FieldGoalDefenseDart):
+            return TransitionError("expected field goal defense dart", ("FieldGoalDefenseDart",))
+        sc = rules.scrimmage
+        eff = event.segment if event.bull == "none" else _effective_segment_bull(event.segment, event.bull, rules)
+        if eff < sc.segment_min or eff > sc.segment_max:
+            return TransitionError(
+                f"segment must be {sc.segment_min}..{sc.segment_max}",
+                ("FieldGoalDefenseDart",),
+            )
+        pending = state.fg_pending_outcome
+        snap = state.fg_snap_field
+        if snap is None:
+            return TransitionError("internal: missing FG snap", ())
+        kicker = state.offense
+
+        def _blocked_at_snap_plus_10() -> TransitionOk:
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(st, clock=new_clock, **_fg_clear_sequence_fields())
+            stk = replace(s_inter, field=snap, offense=kicker)
+            s_to = _field_after_missed_field_goal(stk, rules)
+            return TransitionOk(
+                s_to,
+                Phase.SCRIMMAGE_OFFENSE,
+                f"FG blocked (green bull) — opponent at LOS +{rules.field_goal.miss_spot_offset_yards} yd | "
+                f"{format_possession_summary(s_to)}",
+            )
+
+        if event.bull == "green":
+            if pending == "fake_resolved":
+                fd = state.fg_fake_first_down_line
+                if fd is None:
+                    return TransitionError("internal: missing fake FG first-down line", ())
+                new_clock, st = _advance_clock_for_play(state, rules)
+                short_field = _fake_fg_defense_green_field(state.field, fd)
+                dist = _yards_to_goal_line(short_field)
+                to_go = min(10, dist)
+                downs = DownAndDistance(1, to_go, short_field.scrimmage_line)
+                s_fin = replace(
+                    st,
+                    clock=new_clock,
+                    **_fg_clear_sequence_fields(),
+                    field=short_field,
+                    downs=downs,
+                    offense=kicker,
+                )
+                return TransitionOk(
+                    s_fin,
+                    Phase.SCRIMMAGE_OFFENSE,
+                    "Fake FG — defense green bull: 1 yd short of sticks or own 11, whichever is worse toward goal",
+                )
+            return _blocked_at_snap_plus_10()
+
+        if event.bull == "red":
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(st, clock=new_clock, **_fg_clear_sequence_fields())
+            if pending == "fake_resolved":
+                dist = _yards_to_goal_line(snap)
+                downs = DownAndDistance(1, min(10, dist), snap.scrimmage_line)
+                s_fin = replace(s_inter, field=snap, downs=downs, offense=kicker)
+                return TransitionOk(
+                    s_fin,
+                    Phase.SCRIMMAGE_OFFENSE,
+                    "Fake FG — defense red bull: ball at the line of scrimmage (no gain from snap)",
+                )
+            scoring = _other(kicker)
+            s_td = _state_after_td(s_inter, scoring, rules)
+            return TransitionOk(
+                s_td,
+                Phase.AFTER_TOUCHDOWN_CHOICE,
+                f"FG blocked (red bull) — defensive TD {scoring.value}! (+{rules.scoring.touchdown})",
+            )
+
+        new_clock, st = _advance_clock_for_play(state, rules)
+        s_base = replace(st, clock=new_clock, **_fg_clear_sequence_fields())
+
+        if pending == "good":
+            s2 = replace(s_base, scores=s_base.scores.add(kicker, rules.scoring.field_goal))
+            s3 = _setup_kickoff_after_score(s2, kicker, rules)
             return TransitionOk(
                 s3,
                 Phase.KICKOFF_KICK,
                 f"Field goal good (+{rules.scoring.field_goal}) — kickoff next",
             )
-        s_to = _field_after_missed_field_goal(state, rules)
-        nc, st = _advance_clock_for_play(s_to, rules)
-        s_to = replace(st, clock=nc)
-        return TransitionOk(
-            s_to,
-            Phase.SCRIMMAGE_OFFENSE,
-            f"Field goal {event.kind} — opponent ball at previous LOS +{rules.field_goal.miss_spot_offset_yards} yd",
-        )
+        if pending == "miss":
+            stk = replace(s_base, field=snap, offense=kicker)
+            s_to = _field_after_missed_field_goal(stk, rules)
+            return TransitionOk(
+                s_to,
+                Phase.SCRIMMAGE_OFFENSE,
+                f"Field goal no good — opponent at LOS +{rules.field_goal.miss_spot_offset_yards} yd",
+            )
+        if pending == "fake_resolved":
+            s_fin = replace(s_base, offense=kicker)
+            return TransitionOk(
+                s_fin,
+                Phase.SCRIMMAGE_OFFENSE,
+                "Fake FG — defense dart had no effect on spot",
+            )
+        return TransitionError("internal: bad FG pending state", ())
 
     if phase is Phase.PUNT_ATTEMPT:
         if not isinstance(event, PuntKick):
             return TransitionError("expected punt segment", ("PuntKick",))
-        if event.bull != "none":
-            return TransitionError(
-                "punt green/red bull: fake punt, block, and recovery aren't automated — resolve at the board",
-                ("PuntKick",),
-            )
         pr = rules.punt
         eff = event.segment
         if eff < pr.segment_min or eff > pr.segment_max:
             return TransitionError(
                 f"punt segment must be {pr.segment_min}..{pr.segment_max}",
                 ("PuntKick",),
+            )
+        if event.bull == "green":
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(
+                st,
+                clock=new_clock,
+                declared_punt=False,
+                scrimmage_pending_offense_yards=None,
+                scrimmage_pending_offense_kind="none",
+                scrimmage_pending_offense_eff_segment=None,
+            )
+            return _no_gain_advance_down(
+                s_inter,
+                state,
+                state.field,
+                "Fake punt — no gain at LOS",
+            )
+        if event.bull == "red":
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(
+                st,
+                clock=new_clock,
+                declared_punt=False,
+                scrimmage_pending_offense_yards=None,
+                scrimmage_pending_offense_kind="none",
+                scrimmage_pending_offense_eff_segment=None,
+            )
+            s_to = _defensive_takeover_at_spot(s_inter, state.field)
+            return TransitionOk(
+                s_to,
+                Phase.SCRIMMAGE_OFFENSE,
+                f"Blocked punt — turnover at LOS | {format_possession_summary(s_to)}",
             )
         band = _match_spot_band(pr.bands, eff)
         if band is None:
@@ -908,9 +1463,16 @@ def transition(
                         "60-yard field goals only from your own 40 to 49 yard line",
                         ("FourthDownChoice",),
                     )
+                snap = state.field
                 return TransitionOk(
-                    replace(state, declared_fg_attempt=True),
-                    Phase.FIELD_GOAL_ATTEMPT,
+                    replace(
+                        state,
+                        declared_fg_attempt=True,
+                        fg_snap_field=snap,
+                        fg_pending_outcome="none",
+                        fg_fake_first_down_line=None,
+                    ),
+                    Phase.FIELD_GOAL_OFFENSE_DART,
                     "Field goal attempt",
                 )
         if not isinstance(event, ScrimmageOffense):
@@ -919,38 +1481,57 @@ def transition(
                 ("ScrimmageOffense", "FourthDownChoice"),
             )
         sc = rules.scrimmage
-        if sc.use_wedge_number_yards and event.bull == "red":
-            new_clock, st = _advance_clock_for_play(state, rules)
-            s_base = replace(st, clock=new_clock)
-            s_to = _defensive_takeover_at_spot(s_base, s_base.field)
-            return TransitionOk(
-                s_to,
-                Phase.SCRIMMAGE_OFFENSE,
-                f"Offense red bull — turnover | {format_possession_summary(s_to)}",
-            )
         eff = event.segment if event.bull == "none" else _effective_segment_bull(event.segment, event.bull, rules)
         if eff < sc.segment_min or eff > sc.segment_max:
             return TransitionError(
                 f"segment must be {sc.segment_min}..{sc.segment_max}",
                 ("ScrimmageOffense",),
             )
-        if sc.use_wedge_number_yards:
-            base = eff
-        else:
+        if not sc.use_wedge_number_yards:
+            if event.bull == "red":
+                new_clock, st = _advance_clock_for_play(state, rules)
+                s_base = replace(st, clock=new_clock)
+                s_to = _defensive_takeover_at_spot(s_base, s_base.field)
+                return TransitionOk(
+                    s_to,
+                    Phase.SCRIMMAGE_OFFENSE,
+                    f"Offense red bull — turnover | {format_possession_summary(s_to)}",
+                )
             base = _match_scrimmage_yards(sc.offense_yards, eff)
             if base is None:
                 return TransitionError(
                     f"no offense yard band for segment {eff}",
                     ("ScrimmageOffense",),
                 )
-        mult = 1
-        if event.bull == "none":
-            if event.triple_ring:
-                mult *= sc.triple_multiplier
-            if event.double_ring:
-                mult *= sc.double_multiplier
-        off_yards = base * mult
-        s = replace(state, scrimmage_pending_offense_yards=off_yards)
+            mult = 1
+            if event.bull == "none":
+                if event.triple_ring:
+                    mult *= sc.triple_multiplier
+                if event.double_ring:
+                    mult *= sc.double_multiplier
+            off_yards = base * mult
+            s = replace(state, scrimmage_pending_offense_yards=off_yards)
+        else:
+            if event.bull == "red":
+                kind_s = "red"
+                off_yards = 0
+            elif event.bull == "green":
+                kind_s = "green"
+                off_yards = eff
+            else:
+                kind_s = "wedge"
+                mult = 1
+                if event.triple_ring:
+                    mult *= sc.triple_multiplier
+                if event.double_ring:
+                    mult *= sc.double_multiplier
+                off_yards = eff * mult
+            s = replace(
+                state,
+                scrimmage_pending_offense_yards=off_yards,
+                scrimmage_pending_offense_kind=kind_s,
+                scrimmage_pending_offense_eff_segment=eff,
+            )
         ring = []
         if event.bull != "none":
             ring.append(f"bull {event.bull}")
@@ -978,86 +1559,249 @@ def transition(
             return TransitionError("expected scrimmage defense dart", ("ScrimmageDefense",))
         sc = rules.scrimmage
         off_yards = state.scrimmage_pending_offense_yards
-        if sc.use_wedge_number_yards and event.bull == "red":
-            hypo = _advance_field(state.field, off_yards)
-            new_clock, st = _advance_clock_for_play(state, rules)
-            s_inter = replace(st, clock=new_clock, scrimmage_pending_offense_yards=None)
-            if _is_touchdown(hypo):
-                scoring = state.offense
-                s_td = _state_after_td(s_inter, scoring, rules)
-                return TransitionOk(
-                    s_td,
-                    Phase.PAT_OR_TWO_DECISION,
-                    f"Play: off {off_yards} yds | def red bull moot — TD {scoring.value}! (+{rules.scoring.touchdown})",
-                )
-            s_to = _defensive_takeover_at_spot(s_inter, hypo)
-            return TransitionOk(
-                s_to,
-                Phase.SCRIMMAGE_OFFENSE,
-                f"Play: off {off_yards} yds | defense red bull — turnover | {format_possession_summary(s_to)}",
-            )
-
+        kind = state.scrimmage_pending_offense_kind
         eff = event.segment if event.bull == "none" else _effective_segment_bull(event.segment, event.bull, rules)
         if eff < sc.segment_min or eff > sc.segment_max:
             return TransitionError(
                 f"segment must be {sc.segment_min}..{sc.segment_max}",
                 ("ScrimmageDefense",),
             )
-        if sc.use_wedge_number_yards and event.bull == "green":
-            def_yards = 0
-        elif sc.use_wedge_number_yards:
-            def_yards = eff
-        else:
-            def_yards = _match_scrimmage_yards(sc.defense_yards, eff)
-            if def_yards is None:
-                return TransitionError(
-                    f"no defense yard band for segment {eff}",
-                    ("ScrimmageDefense",),
+
+        if not sc.use_wedge_number_yards or kind == "none":
+            if sc.use_wedge_number_yards and event.bull == "red":
+                hypo = _advance_field(state.field, off_yards)
+                new_clock, st = _advance_clock_for_play(state, rules)
+                s_inter = replace(
+                    st,
+                    clock=new_clock,
+                    scrimmage_pending_offense_yards=None,
+                    scrimmage_pending_offense_kind="none",
+                    scrimmage_pending_offense_eff_segment=None,
                 )
-        raw_net = off_yards - def_yards
-        net = max(raw_net, -sc.max_loss_yards)
-        new_field = _advance_field(state.field, net)
+                if _is_touchdown(hypo):
+                    scoring = state.offense
+                    s_td = _state_after_td(s_inter, scoring, rules)
+                    return TransitionOk(
+                        s_td,
+                        Phase.AFTER_TOUCHDOWN_CHOICE,
+                        f"Play: off {off_yards} yds | def red bull moot — TD {scoring.value}! (+{rules.scoring.touchdown})",
+                    )
+                s_to = _defensive_takeover_at_spot(s_inter, hypo)
+                return TransitionOk(
+                    s_to,
+                    Phase.SCRIMMAGE_OFFENSE,
+                    f"Play: off {off_yards} yds | defense red bull — turnover | {format_possession_summary(s_to)}",
+                )
+            if sc.use_wedge_number_yards and event.bull == "green":
+                def_yards = 0
+            elif sc.use_wedge_number_yards:
+                def_yards = eff
+            else:
+                def_yards = _match_scrimmage_yards(sc.defense_yards, eff)
+                if def_yards is None:
+                    return TransitionError(
+                        f"no defense yard band for segment {eff}",
+                        ("ScrimmageDefense",),
+                    )
+            raw_net = off_yards - def_yards
+            net = max(raw_net, -sc.max_loss_yards)
+            new_field = _advance_field(state.field, net)
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(
+                st,
+                field=new_field,
+                clock=new_clock,
+                scrimmage_pending_offense_yards=None,
+                scrimmage_pending_offense_kind="none",
+                scrimmage_pending_offense_eff_segment=None,
+            )
+            dn = _defense_ring_note(event)
+            return _finish_scrimmage_net_play(state, rules, s_inter, new_field, off_yards, def_yards, net, dn)
+
+        if kind == "wedge":
+            if event.bull == "green":
+                return TransitionOk(
+                    replace(state),
+                    Phase.SCRIMMAGE_STRIP_DART,
+                    "Defense green bull — throw a numbered wedge dart (strip). Same board wedge color as offense wedge: "
+                    "full offensive yards then turnover (or offensive TD); else turnover at LOS.",
+                )
+            if event.bull == "red":
+                return _defensive_touchdown_after_offense_yards(
+                    state,
+                    rules,
+                    off_yards,
+                    f"Play: off {off_yards} yds | def red bull",
+                )
+            def_yards = eff
+            raw_net = off_yards - def_yards
+            net = max(raw_net, -sc.max_loss_yards)
+            new_field = _advance_field(state.field, net)
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(
+                st,
+                field=new_field,
+                clock=new_clock,
+                scrimmage_pending_offense_yards=None,
+                scrimmage_pending_offense_kind="none",
+                scrimmage_pending_offense_eff_segment=None,
+            )
+            dn = _defense_ring_note(event)
+            return _finish_scrimmage_net_play(state, rules, s_inter, new_field, off_yards, def_yards, net, dn)
+
+        if kind == "green":
+            if event.bull == "red":
+                new_clock, st = _advance_clock_for_play(state, rules)
+                s_inter = replace(
+                    st,
+                    clock=new_clock,
+                    scrimmage_pending_offense_yards=None,
+                    scrimmage_pending_offense_kind="none",
+                    scrimmage_pending_offense_eff_segment=None,
+                )
+                s_to = _defensive_takeover_at_spot(s_inter, state.field)
+                return TransitionOk(
+                    s_to,
+                    Phase.SCRIMMAGE_OFFENSE,
+                    f"Play: off {off_yards} yds (off green) | def red bull — turnover at LOS | "
+                    f"{format_possession_summary(s_to)}",
+                )
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(
+                st,
+                clock=new_clock,
+                scrimmage_pending_offense_yards=None,
+                scrimmage_pending_offense_kind="none",
+                scrimmage_pending_offense_eff_segment=None,
+            )
+            if event.bull == "green":
+                summ = f"Play: off {off_yards} yds (off green) | def green — no gain at LOS"
+            else:
+                summ = f"Play: off {off_yards} yds (off green) | def wedge — no effect, no gain"
+            return _no_gain_advance_down(s_inter, state, state.field, summ)
+
+        if event.bull == "red":
+            new_clock, st = _advance_clock_for_play(state, rules)
+            s_inter = replace(
+                st,
+                clock=new_clock,
+                scrimmage_pending_offense_yards=None,
+                scrimmage_pending_offense_kind="none",
+                scrimmage_pending_offense_eff_segment=None,
+            )
+            return _no_gain_advance_down(
+                s_inter,
+                state,
+                state.field,
+                "Play: offense red bull | def red — no gain at LOS",
+            )
         new_clock, st = _advance_clock_for_play(state, rules)
         s_inter = replace(
             st,
-            field=new_field,
             clock=new_clock,
             scrimmage_pending_offense_yards=None,
+            scrimmage_pending_offense_kind="none",
+            scrimmage_pending_offense_eff_segment=None,
         )
-        dn = _defense_ring_note(event)
-        if _is_touchdown(new_field):
-            scoring = state.offense
-            s_td = _state_after_td(s_inter, scoring, rules)
-            return TransitionOk(
-                s_td,
-                Phase.PAT_OR_TWO_DECISION,
-                f"Play: off {off_yards} vs def {def_yards}{dn} → net {net} yds | TD {scoring.value}! (+{rules.scoring.touchdown})",
+        return _no_gain_advance_down(
+            s_inter,
+            state,
+            state.field,
+            "Play: offense red bull | def dart — no effect, no gain",
+        )
+
+    if phase is Phase.SCRIMMAGE_STRIP_DART:
+        if state.scrimmage_pending_offense_kind != "wedge":
+            return TransitionError("strip dart only after defense green vs offense numbered wedge", ())
+        if state.scrimmage_pending_offense_yards is None or state.scrimmage_pending_offense_eff_segment is None:
+            return TransitionError("internal: missing strip context", ())
+        if not isinstance(event, ScrimmageStripDart):
+            return TransitionError("expected strip wedge dart", ("ScrimmageStripDart",))
+        sc = rules.scrimmage
+        seg = event.segment
+        if seg < sc.segment_min or seg > sc.segment_max:
+            return TransitionError(
+                f"segment must be {sc.segment_min}..{sc.segment_max}",
+                ("ScrimmageStripDart",),
             )
-        dist = _yards_to_goal_line(new_field)
-        to_go_before = state.downs.to_go
-        if net >= to_go_before:
-            down = 1
-            to_go = min(10, dist)
-        else:
-            down = state.downs.down + 1
-            to_go = to_go_before - net
-        if down > 4:
-            s_to = _turnover_on_downs_state(s_inter, new_field)
+        off_eff = state.scrimmage_pending_offense_eff_segment
+        off_yards = state.scrimmage_pending_offense_yards
+        new_clock, st = _advance_clock_for_play(state, rules)
+        pending_clear = {
+            "scrimmage_pending_offense_yards": None,
+            "scrimmage_pending_offense_kind": "none",
+            "scrimmage_pending_offense_eff_segment": None,
+        }
+        if _wedge_board_colors_match(off_eff, seg):
+            hypo = _advance_field(state.field, off_yards)
+            s_inter = replace(st, clock=new_clock, field=hypo, **pending_clear)
+            if _is_touchdown(hypo):
+                scoring = state.offense
+                s_td = _state_after_td(s_inter, scoring, rules)
+                return TransitionOk(
+                    s_td,
+                    Phase.AFTER_TOUCHDOWN_CHOICE,
+                    f"Strip match — offense gains {off_yards} yds | TD {scoring.value}! (+{rules.scoring.touchdown})",
+                )
+            s_to = _defensive_takeover_at_spot(s_inter, hypo)
             return TransitionOk(
                 s_to,
                 Phase.SCRIMMAGE_OFFENSE,
-                f"Play: net {net} yds{dn} | turnover on downs",
+                f"Strip match — offense gains {off_yards} yds then turnover | {format_possession_summary(s_to)}",
             )
-        downs = DownAndDistance(down, to_go, new_field.scrimmage_line)
-        s_final = replace(s_inter, downs=downs)
-        next_phase = Phase.FOURTH_DOWN_DECISION if down == 4 else Phase.SCRIMMAGE_OFFENSE
+        s_inter = replace(st, clock=new_clock, **pending_clear)
+        s_to = _defensive_takeover_at_spot(s_inter, state.field)
         return TransitionOk(
-            s_final,
-            next_phase,
-            f"Play: off {off_yards} vs def {def_yards}{dn} → net {net} yds | down {down} & {to_go}",
+            s_to,
+            Phase.SCRIMMAGE_OFFENSE,
+            f"Strip no color match — turnover at LOS | {format_possession_summary(s_to)}",
+        )
+
+    if phase is Phase.SAFETY_SEQUENCE:
+        if not isinstance(event, ConfirmSafetyKickoff):
+            return TransitionError(
+                "expected confirm safety free kick",
+                ("ConfirmSafetyKickoff",),
+            )
+        if state.safety_pending_kicker is None:
+            return TransitionError("internal: no pending safety kicker", ())
+        k = state.safety_pending_kicker
+        recv = _other(k)
+        s2 = replace(state, safety_pending_kicker=None)
+        s3 = _setup_safety_free_kick(s2, k, recv, rules)
+        return TransitionOk(
+            s3,
+            Phase.KICKOFF_KICK,
+            "Safety free kick — kicker chooses regular or onside, then throw",
+        )
+
+    if phase is Phase.OVERTIME_START:
+        if not isinstance(event, CoinTossWinner):
+            return TransitionError(
+                "expected overtime coin toss winner",
+                ("CoinTossWinner",),
+            )
+        s = replace(state, coin_toss_winner=event.winner)
+        return TransitionOk(
+            s,
+            Phase.CHOOSE_KICK_OR_RECEIVE,
+            f"Overtime: {event.winner.value} won the toss — kick or receive",
         )
 
     if phase is Phase.GAME_OVER:
         return TransitionError("game over", ())
 
     return TransitionError(f"unhandled phase {phase!r}", ())
+
+
+def transition(
+    state: GameState,
+    phase: Phase,
+    event: Event,
+    rules: RuleSet,
+) -> TransitionOk | TransitionError:
+    prev_q = state.clock.quarter
+    out = _transition_core(state, phase, event, rules)
+    if isinstance(out, TransitionOk):
+        return _post_process_transition_ok(prev_q, out, rules)
+    return out

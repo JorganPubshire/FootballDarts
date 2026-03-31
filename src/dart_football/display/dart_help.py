@@ -11,32 +11,61 @@ def _sorted_seg_str(segments: frozenset[int]) -> str:
     return ", ".join(str(x) for x in sorted(segments))
 
 
-def format_spot_band_lines(bands: tuple[KickoffBand, ...], header: str) -> list[str]:
+def _kickoff_field_outcome_prefix(segments: frozenset[int]) -> str:
+    """Lead-in for standard kickoff field bands (segments 1–5 vs 6–8)."""
+    if not segments:
+        return ""
+    if all(1 <= s <= 5 for s in segments):
+        return "Ball kicked out of bounds. "
+    if all(6 <= s <= 8 for s in segments):
+        return "Kicked short of landing zone. "
+    return ""
+
+
+def _kickoff_touchback_outcome_prefix(segments: frozenset[int]) -> str:
+    """Lead-in for kickoff touchback when the ball leaves the end zone with no return (e.g. 16–20)."""
+    if not segments:
+        return ""
+    if all(16 <= s <= 20 for s in segments):
+        return "Out of end zone, no return. "
+    return ""
+
+
+def format_spot_band_lines(
+    bands: tuple[KickoffBand, ...],
+    header: str,
+    *,
+    kickoff_field_prefixes: bool = False,
+) -> list[str]:
     lines = [header, ""]
     for b in bands:
         segs = _sorted_seg_str(b.segments)
         if b.kind == "touchback":
             assert b.touchback_line is not None
+            tpre = _kickoff_touchback_outcome_prefix(b.segments) if kickoff_field_prefixes else ""
             if b.allow_runout_choice:
                 lines.append(
-                    f"  Segments {segs}: receiver chooses ball at own {b.touchback_line} "
-                    "or run out from the goal line (run-out dart in app)."
+                    f"  Segments {segs}: {tpre}receiver chooses ball at own {b.touchback_line} "
+                    "or run out from the goal line."
                 )
             else:
-                lines.append(f"  Segments {segs}: 1st & 10 at own {b.touchback_line}.")
+                lines.append(
+                    f"  Segments {segs}: {tpre}1st & 10 at own {b.touchback_line}."
+                )
         elif b.kind == "field":
             assert b.field_yard_from_receiving_goal is not None
-            lines.append(f"  Segments {segs}: 1st & 10 at own {b.field_yard_from_receiving_goal}.")
+            pre = _kickoff_field_outcome_prefix(b.segments) if kickoff_field_prefixes else ""
+            lines.append(
+                f"  Segments {segs}: {pre}1st & 10 at own {b.field_yard_from_receiving_goal}."
+            )
         elif b.kind == "wedge_times":
             assert b.multiplier is not None
             if b.requires_return_dart:
                 lines.append(
-                    f"  Segments {segs}: spot uses wedge × {b.multiplier} yards (own field, clamped); "
-                    "then mandatory return dart in app."
-                )
+                    f"  Segments {segs}: {b.multiplier}x yards, receiver gets a return dart.")
             else:
                 lines.append(
-                    f"  Segments {segs}: spot uses wedge × {b.multiplier} yards (own field, clamped)."
+                    f"  Segments {segs}: {b.multiplier}x yards."
                 )
         elif b.kind == "wedge_times_penalty":
             assert b.multiplier is not None and b.penalty_yards is not None
@@ -101,8 +130,8 @@ def _defense_thrower_line(state: GameState | None) -> list[str]:
         return []
     d = opponent(state.offense)
     return [
-        f"Thrower: {team_display_name(d)} is on defense — defense throws this dart.",
-        f"Line of scrimmage (offense's ball): {format_line_of_scrimmage(state.offense, state.field)}.",
+        f"Thrower: {team_display_name(d)}",
+        f"Line of scrimmage: {format_line_of_scrimmage(state.offense, state.field)}.",
     ]
 
 
@@ -128,10 +157,14 @@ def kickoff_instructions(rules: RuleSet, state: GameState | None = None) -> str:
         "",
         f"Numbered wedges: yardage uses dart number ×{km} where noted; ignore doubles/triples on the kick dart unless a return dart applies.",
         "",
-        *format_spot_band_lines(rules.kickoff.bands, "Numbered wedge spots:"),
+        *format_spot_band_lines(
+            rules.kickoff.bands,
+            "Numbered wedge spots:",
+            kickoff_field_prefixes=True,
+        ),
         "",
         "Green bull: receiving-team fumble — kicking team recovers at opponent 35 (handled here).",
-        "Red bull: receiving-team fumble — touchdown for the kicking team (then PAT).",
+        "Red bull: receiving-team fumble — touchdown for the kicking team.",
         "Bands marked for run-out choice or mandatory return dart continue in the next phase after this kick.",
     ]
     return "\n".join(lines)
@@ -226,12 +259,16 @@ def scrimmage_offense_instructions(rules: RuleSet, state: GameState | None = Non
     ]
     if sc.use_wedge_number_yards:
         lines += [
-            f"Base yards = wedge number ({sc.segment_min}–{sc.segment_max}) ×1. "
-            f"Double ring: ×{sc.double_multiplier}. Triple ring: ×{sc.triple_multiplier}.",
+            f"Numbered wedge: base yards = wedge number ({sc.segment_min}–{sc.segment_max}) ×1. "
+            f"Double ring: ×{sc.double_multiplier}. Triple ring: ×{sc.triple_multiplier}. "
+            "Defense then throws; outcomes depend on both darts (see defense help).",
             "",
-            f"Green bull: yardage dart — counts as wedge {sc.bull_green_segment} ×1 (no double/triple on the bull); "
-            "then the defense throws as usual.",
-            "Red bull: turnover — defense takes over at the line of scrimmage (no defense dart for this play).",
+            f"Green bull: counts as wedge {sc.bull_green_segment} ×1 for offense yards (no double/triple on the bull). "
+            "Defense still throws; numbered defense has no effect; green defense = no gain at LOS; "
+            "red defense = turnover at the line of scrimmage.",
+            "",
+            "Red bull: 0 offensive yards; defense still throws. Numbered and green defense have no effect; "
+            "red defense = no gain at LOS (no defensive TD).",
         ]
     else:
         lines += [
@@ -262,13 +299,40 @@ def scrimmage_defense_instructions(rules: RuleSet, state: GameState | None = Non
         "",
     ]
     if sc.use_wedge_number_yards:
+        kind = getattr(state, "scrimmage_pending_offense_kind", "none") if state is not None else "none"
         lines += [
-            f"Defense yards = wedge number ({sc.segment_min}–{sc.segment_max}) ×1. Ignore doubles and triples for yardage.",
+            f"Defense wedge yardage uses the wedge number ({sc.segment_min}–{sc.segment_max}) ×1 only — "
+            "ignore doubles and triples for yards.",
             "",
-            "Green bull: nullify — your wedge yards count as 0; offense keeps full offensive yards on the play.",
-            "Red bull: turnover — your team takes the ball where the play ended (offense's forward yards). "
-            "If that spot is a touchdown for the offense, the TD stands instead.",
         ]
+        if kind == "wedge":
+            lines += [
+                "Offense hit a numbered wedge.",
+                "• Numbered wedge: subtract your wedge from their offensive yards (net gain, first down, TD, etc.).",
+                "• Green bull: strip — you will throw another numbered wedge only. "
+                "If its board color matches the offense wedge color: they get full offensive yards, then you take over "
+                "(or they score a TD if the gain reaches the goal). If colors differ: turnover at the line of scrimmage.",
+                "• Red bull: defensive touchdown.",
+            ]
+        elif kind == "green":
+            lines += [
+                "Offense hit the green bull.",
+                "• Numbered wedge: no effect (no yardage change).",
+                "• Green bull: no gain; ball stays at the line of scrimmage; play ends (next down).",
+                "• Red bull: turnover at the line of scrimmage.",
+            ]
+        elif kind == "red":
+            lines += [
+                "Offense hit the red bull (0 yards).",
+                "• Numbered wedge or green bull: no effect.",
+                "• Red bull: no gain; ball at the line of scrimmage; play ends (next down).",
+            ]
+        else:
+            lines += [
+                "After offense numbered wedge: your wedge offsets theirs; green bull = strip dart next; red = defensive TD.",
+                "After offense green bull: your wedge is ignored; green = LOS; red = turnover at LOS.",
+                "After offense red bull: wedge/green ignored; red = LOS, no defensive TD.",
+            ]
     else:
         lines += [
             "Defense yards come from the wedge table (double/triple ignored for yardage but can be logged).",
@@ -278,6 +342,34 @@ def scrimmage_defense_instructions(rules: RuleSet, state: GameState | None = Non
             f"Green bull → wedge {sc.bull_green_segment}; red bull → wedge {sc.bull_red_segment}.",
         ]
     return "\n".join(lines)
+
+
+def scrimmage_strip_instructions(rules: RuleSet, state: GameState | None = None) -> str:
+    sc = rules.scrimmage
+    tm = rules.throw_markers
+    eff = state.scrimmage_pending_offense_eff_segment if state is not None else None
+    off_y = state.scrimmage_pending_offense_yards if state is not None else None
+    head = [
+        "Strip dart (after defense green bull vs offense numbered wedge)",
+        "",
+        *_defense_thrower_line(state),
+        "",
+        tm.defense_line,
+        "",
+        "Enter a numbered wedge only (no bull, no double/triple for this throw).",
+        "Board colors alternate around the wire; two wedges are the same color if they match that alternating pattern.",
+    ]
+    if eff is not None and off_y is not None:
+        head += [
+            "",
+            f"Offense wedge (for color match): {eff}. Pending offensive yards if strip matches: {off_y}.",
+        ]
+    head += [
+        "",
+        f"Match: full {off_y or '…'} yd gain applies, then defense takes over (or offense TD if the ball crosses the goal).",
+        "No match: turnover at the line of scrimmage (no offensive yards from this play).",
+    ]
+    return "\n".join(head)
 
 
 def punt_instructions(rules: RuleSet, state: GameState | None = None) -> str:
@@ -291,35 +383,160 @@ def punt_instructions(rules: RuleSet, state: GameState | None = None) -> str:
         "",
         *format_spot_band_lines(rules.punt.bands, "Punting team — wedge spots:"),
         "",
-        "Green/red bull on a punt: fake punt, block, and recovery aren't automated here.",
-        "Block attempt and return dart (when allowed) aren't simulated in this app.",
+        f"Green bull: fake punt — no gain; ball stays at the line of scrimmage and the down advances "
+        f"(turnover on downs if that was 4th down).",
+        "Red bull: blocked punt — defense takes over at the line of scrimmage.",
     ]
     return "\n".join(lines)
 
 
-def field_goal_instructions(state: GameState, rules: RuleSet) -> str:
+def field_goal_offense_dart_instructions(state: GameState, rules: RuleSet) -> str:
     tm = rules.throw_markers
     dist = abs(state.field.goal_yard - state.field.scrimmage_line)
     o = state.offense
     return "\n".join(
         [
-            "Field goal",
+            "Field goal — kicker's dart",
             "",
-            f"Kicker side: {team_display_name(o)} attempts the field goal.",
+            f"Kicker: {team_display_name(o)}.",
             f"Line of scrimmage: {format_line_of_scrimmage(o, state.field)}.",
             "",
             tm.field_goal_line,
             "",
-            f"Rough distance: {dist} yd to the goal posts (round up to nearest 10 yd).",
-            "Attempts only on 3rd or 4th down unless last play of half or game; "
-            f"60-yard tries only from your own 40–49 yard line; max kick {rules.field_goal.max_distance_yards} yd here.",
-            f"If missed or no good: opponent takes over at previous LOS + {rules.field_goal.miss_spot_offset_yards} yd.",
-            "FG circle, triple goal post, blocks, and fakes aren't fully automated.",
+            f"Rough kick distance: {dist} yd (round up to nearest 10 yd). "
+            f"Max {rules.field_goal.max_distance_yards} yd; 60-yard tries only from own 40–49.",
+            "",
+            "Offense dart (then defense always throws unless offense red bull):",
+            "  • Numbered wedge inside the triple ring (single/double between double ring and triple, not on triple): "
+            "would be good (+3) if in range — then defense.",
+            "  • Numbered wedge outside the triple ring: would miss — turnover at LOS + "
+            f"{rules.field_goal.miss_spot_offset_yards} if it stands — then defense.",
+            "  • On the triple ring (triple bed): would be good if wedge board color matches kicker's team, else miss — then defense.",
+            "  • Green bull: choose real kick (then defense) or fake (yardage dart, no defense on that throw, then 1st & 10, then defense).",
+            "  • Red bull: touchdown for the kicking team (+6) — no defense dart.",
+            "",
+            "Defense dart (after offense, when required): green bull blocks (opponent ball at LOS + "
+            f"{rules.field_goal.miss_spot_offset_yards}); red bull blocks for a defensive touchdown. "
+            "Numbered wedge / ring detail: log if you like — often no extra effect.",
         ]
     )
 
 
-def pat_instructions(rules: RuleSet, state: GameState) -> str:
+def field_goal_green_choice_instructions(state: GameState, rules: RuleSet) -> str:
+    o = state.offense
+    return "\n".join(
+        [
+            "Field goal — green bull",
+            "",
+            f"Kicker: {team_display_name(o)}.",
+            "",
+            "Choose a real field goal attempt (defense still throws to try to block) "
+            "or a fake (one offensive yardage dart using normal scrimmage wedge rules, no defense on that dart; "
+            "then 1st & 10, then defense).",
+            "",
+            "On the fake, defense green bull stops the play 1 yard short of the first-down line or at your own 11, "
+            "whichever leaves the ball further from the goal you are driving toward. "
+            "Defense red bull puts the ball back at the original line of scrimmage.",
+        ]
+    )
+
+
+def field_goal_fake_offense_instructions(state: GameState, rules: RuleSet) -> str:
+    o = state.offense
+    lines = [
+        "Fake field goal — offense yardage dart",
+        "",
+        f"Offense: {team_display_name(o)}.",
+        "",
+        "Same wedge rules as a normal scrimmage offensive dart (including doubles/triples when your rules use wedge numbers). "
+        "No separate defense dart for this throw.",
+    ]
+    if rules.scrimmage.use_wedge_number_yards:
+        lines.extend(
+            [
+                "",
+                "Green bull: wedge number yards. Red bull: no gain from this dart.",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                "",
+                "This rules file does not use wedge-number scrimmage yards — configure use_wedge_number_yards to run a fake FG.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def field_goal_defense_instructions(state: GameState, rules: RuleSet) -> str:
+    d = opponent(state.offense)
+    pending = state.fg_pending_outcome
+    extra = ""
+    if pending == "good":
+        extra = "If your dart has no special effect, the field goal is good (+3) and there will be a kickoff."
+    elif pending == "miss":
+        extra = (
+            "If your dart has no special effect, the kick is no good — opponent at LOS + "
+            f"{rules.field_goal.miss_spot_offset_yards}."
+        )
+    elif pending == "fake_resolved":
+        extra = (
+            "If your dart has no special effect, the fake stays at the spot after the yardage dart (1st & 10 already set)."
+        )
+    return "\n".join(
+        [
+            "Field goal — defense dart",
+            "",
+            f"Defense throws: {team_display_name(d)}.",
+            "",
+            "Green bull: block — effects depend on whether this was a real try or a fake (see on-screen result).",
+            "Red bull: block — defensive touchdown on a real try; on a fake, ball at the line of scrimmage.",
+            "Numbered wedge: choose ring (single / double / triple / inner vs outer triple) for the record; it may not change the outcome.",
+            "",
+            extra,
+        ]
+    )
+
+
+def field_goal_instructions(state: GameState, rules: RuleSet) -> str:
+    """Alias for the kicker's first FG dart; kept for callers that expect one FG help block."""
+    return field_goal_offense_dart_instructions(state, rules)
+
+
+def safety_sequence_instructions(state: GameState, rules: RuleSet) -> str:
+    k = state.safety_pending_kicker
+    ks = team_display_name(k) if k is not None else "the team that was on offense"
+    y = rules.safety.free_kick_own_yard
+    return "\n".join(
+        [
+            "Safety",
+            "",
+            f"The defense has been awarded {rules.scoring.safety} point(s).",
+            f"{ks} will free-kick next from their own {y}-yard line (same kickoff flow as after a score).",
+            "Confirm when you are ready to set up the kickoff phase.",
+        ]
+    )
+
+
+def overtime_start_instructions(state: GameState, rules: RuleSet) -> str:
+    lines = [
+        "Overtime",
+        "",
+        "Regulation ended tied. Record who won the overtime coin toss (same as opening toss).",
+        "The winner then chooses kick or receive on the next screen.",
+    ]
+    if rules.overtime.template == "first_score":
+        lines.extend(
+            [
+                "",
+                "Sudden score: once the score is no longer tied, the game will end when you reach the kickoff phase "
+                "(after any try after touchdown).",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def extra_point_attempt_instructions(rules: RuleSet, state: GameState) -> str:
     tm = rules.throw_markers
     o = state.offense
     return "\n".join(
@@ -328,7 +545,7 @@ def pat_instructions(rules: RuleSet, state: GameState) -> str:
             "",
             f"Kicking team: {team_display_name(o)}.",
             "",
-            tm.pat_line,
+            tm.extra_point_line,
             "",
             "Outside FG circle = no good; inside FG circle or triple of your team color = good; defense bulls can block.",
             "Record made or missed below to match your throw.",

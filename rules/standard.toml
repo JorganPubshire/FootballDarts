@@ -10,7 +10,7 @@ id = "standard"
 touchdown = 6
 field_goal = 3
 safety = 2
-pat = 1
+extra_point = 1
 two_point = 2
 
 [structure]
@@ -27,7 +27,7 @@ offense_line = "Throw from the 20-yard floor mark. Bounce-outs re-throw; defense
 defense_line = "Throw from the 30-yard floor mark (one throw only)."
 punt_line = "State the punt attempt first. Cannot punt on first down. Punting team from 20-yard floor mark; defense from 30 for block attempt."
 field_goal_line = "State the field goal attempt first; round distance up to nearest 10 and stand at that floor yard mark; one dart inside the FG circle."
-pat_line = "Attempt from the 20-yard floor mark."
+extra_point_line = "Attempt from the 20-yard floor mark."
 two_point_line = "Offense from 20-yard floor mark, defense from 30-yard floor mark."
 
 [kickoff]
@@ -94,14 +94,14 @@ max_distance_yards = 60
 # Missed FG — opponent takes over at line of scrimmage +10 yards.
 miss_spot_offset_yards = 10
 
-[pat]
-pat_advances_game_clock = false
+[after_touchdown]
+extra_point_attempt_advances_game_clock = false
 
 [punt]
 segment_min = 1
 segment_max = 20
 
-# Punts — punting team (simplified: no block/return/fake punt automation).
+# Punts — punting team (green bull = fake, red bull = block at LOS; return after normal punt not automated).
 [[punt.bands]]
 segments = [14, 15, 16, 17, 18, 19, 20]
 effect = { kind = "wedge_times", multiplier = 3 }
@@ -115,6 +115,11 @@ effect = { kind = "wedge_times", multiplier = 3 }
 segments = [1, 2, 3, 4, 5, 6]
 effect = { kind = "wedge_times_penalty", multiplier = 3, penalty_yards = 5 }
 
+# After a safety: team that was on offense kicks from this own-yard line (NFL-style 20).
+[safety]
+free_kick_own_yard = 20
+
 [overtime]
 enabled = false
+# When enabled: "first_score" ends the game at kickoff phase once the score is no longer tied.
 template = "none"

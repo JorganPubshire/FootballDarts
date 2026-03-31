@@ -63,9 +63,10 @@ def test_yards_to_goal(
 @pytest.mark.parametrize(
     ("offense", "scrimmage_line", "goal_yard", "substr"),
     [
-        (TeamId.RED, 35, 100, "Red 35"),
-        (TeamId.RED, 75, 100, "Green's 25-yard line"),
-        (TeamId.GREEN, 75, 0, "Green 25"),
+        # Labels match field_visual: coordinate from Green goal (left) to Red (right).
+        (TeamId.RED, 35, 100, "Green 35"),
+        (TeamId.RED, 75, 100, "Red 25"),
+        (TeamId.GREEN, 75, 0, "Red 25"),
     ],
 )
 def test_format_line_of_scrimmage_contains(
@@ -103,12 +104,30 @@ def test_format_field_visual_contains_markers() -> None:
         clock=GameClock(1, 0, 0),
         timeouts=Timeouts(3, 3, 3, 3),
     )
+    out = format_field_visual(s, phase=Phase.SCRIMMAGE_OFFENSE, large_field=True).plain
+    assert "▼" in out and "▽" in out
+    assert "▲" in out and "△" in out
+    assert "●" in out
+    assert "┌" in out
+    assert "LOS 35" in out
+    assert "1st-down line 45" in out
+
+
+def test_format_field_visual_single_row_scrimmage_default() -> None:
+    s = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(35, 100),
+        downs=DownAndDistance(1, 10, 35),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
     out = format_field_visual(s, phase=Phase.SCRIMMAGE_OFFENSE).plain
+    assert "┌" not in out
     assert "▼" in out and "▽" in out
     assert "▲" in out and "△" in out
     assert "●" in out
     assert "LOS 35" in out
-    assert "1st-down line 45" in out
 
 
 def test_format_field_visual_kickoff_omits_first_down() -> None:
@@ -121,10 +140,25 @@ def test_format_field_visual_kickoff_omits_first_down() -> None:
         clock=GameClock(1, 0, 0),
         timeouts=Timeouts(3, 3, 3, 3),
     )
-    out = format_field_visual(s, phase=Phase.KICKOFF_KICK).plain
+    out = format_field_visual(s, phase=Phase.KICKOFF_KICK, large_field=True).plain
     assert "1st-down" not in out
     assert "& 10" not in out
     assert "no scrimmage down" in out
+    assert "●" in out
+
+
+def test_format_field_visual_kickoff_single_row_no_border() -> None:
+    s = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(35, 100),
+        downs=DownAndDistance(1, 10, 35),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
+    out = format_field_visual(s, phase=Phase.KICKOFF_KICK).plain
+    assert "┌" not in out
+    assert "▼" not in out
     assert "●" in out
 
 
@@ -137,7 +171,7 @@ def test_format_field_visual_field_goal_omits_first_down() -> None:
         clock=GameClock(1, 0, 0),
         timeouts=Timeouts(3, 3, 3, 3),
     )
-    out = format_field_visual(s, phase=Phase.FIELD_GOAL_ATTEMPT).plain
+    out = format_field_visual(s, phase=Phase.FIELD_GOAL_OFFENSE_DART, large_field=True).plain
     assert "1st-down" not in out
     assert "& 10" not in out
     assert "no scrimmage down" in out

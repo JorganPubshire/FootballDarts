@@ -9,7 +9,8 @@ from dart_football.rules.schema import (
     KickoffBand,
     KickoffRules,
     OvertimeRules,
-    PatRules,
+    AfterTouchdownRules,
+    SafetyRules,
     PuntRules,
     RuleSet,
     ScoringRules,
@@ -129,7 +130,9 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
             touchdown=int(s.get("touchdown", scoring.touchdown)),
             field_goal=int(s.get("field_goal", scoring.field_goal)),
             safety=int(s.get("safety", scoring.safety)),
-            pat=int(s.get("pat", scoring.pat)),
+            extra_point=int(
+                s.get("extra_point", s.get("pat", scoring.extra_point)),
+            ),
             two_point=int(s.get("two_point", scoring.two_point)),
         )
 
@@ -192,10 +195,20 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
             bands=_parse_kickoff_bands(pu),
         )
 
-    pat = PatRules()
-    if "pat" in raw and isinstance(raw["pat"], dict):
-        pa = raw["pat"]
-        pat = PatRules(pat_advances_game_clock=bool(pa.get("pat_advances_game_clock", pat.pat_advances_game_clock)))
+    after_touchdown = AfterTouchdownRules()
+    ad_section = raw.get("after_touchdown") or raw.get("pat")
+    if isinstance(ad_section, dict):
+        after_touchdown = AfterTouchdownRules(
+            extra_point_attempt_advances_game_clock=bool(
+                ad_section.get(
+                    "extra_point_attempt_advances_game_clock",
+                    ad_section.get(
+                        "pat_advances_game_clock",
+                        after_touchdown.extra_point_attempt_advances_game_clock,
+                    ),
+                )
+            )
+        )
 
     overtime = OvertimeRules()
     if "overtime" in raw and isinstance(raw["overtime"], dict):
@@ -203,6 +216,13 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
         overtime = OvertimeRules(
             enabled=bool(ot.get("enabled", overtime.enabled)),
             template=str(ot.get("template", overtime.template)),
+        )
+
+    safety = SafetyRules()
+    if "safety" in raw and isinstance(raw["safety"], dict):
+        sa = raw["safety"]
+        safety = SafetyRules(
+            free_kick_own_yard=int(sa.get("free_kick_own_yard", safety.free_kick_own_yard)),
         )
 
     throw_markers = ThrowMarkers()
@@ -217,7 +237,9 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
             defense_line=str(tm.get("defense_line", throw_markers.defense_line)),
             punt_line=str(tm.get("punt_line", throw_markers.punt_line)),
             field_goal_line=str(tm.get("field_goal_line", throw_markers.field_goal_line)),
-            pat_line=str(tm.get("pat_line", throw_markers.pat_line)),
+            extra_point_line=str(
+                tm.get("extra_point_line", tm.get("pat_line", throw_markers.extra_point_line)),
+            ),
             two_point_line=str(tm.get("two_point_line", throw_markers.two_point_line)),
         )
 
@@ -230,8 +252,9 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
         scrimmage=scrimmage,
         field_goal=field_goal,
         punt=punt,
-        pat=pat,
+        after_touchdown=after_touchdown,
         overtime=overtime,
+        safety=safety,
         throw_markers=throw_markers,
     )
 

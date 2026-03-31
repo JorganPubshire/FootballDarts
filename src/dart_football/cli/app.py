@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
@@ -35,13 +36,16 @@ _NON_SCRIMMAGE_STATUS: dict[Phase, str] = {
     Phase.KICKOFF_RUN_OUT_DART: "kickoff sequence (no scrimmage series yet)",
     Phase.KICKOFF_RETURN_DART: "kickoff sequence (no scrimmage series yet)",
     Phase.ONSIDE_KICK: "onside kick (no scrimmage series yet)",
-    Phase.FIELD_GOAL_ATTEMPT: "field goal attempt (no scrimmage down)",
+    Phase.FIELD_GOAL_OFFENSE_DART: "field goal — kicker's dart (no scrimmage down)",
+    Phase.FIELD_GOAL_GREEN_CHOICE: "field goal — real kick or fake (no scrimmage down)",
+    Phase.FIELD_GOAL_FAKE_OFFENSE: "field goal fake — offense yardage dart (no scrimmage down)",
+    Phase.FIELD_GOAL_DEFENSE: "field goal — defense dart (no scrimmage down)",
     Phase.PUNT_ATTEMPT: "punt attempt (no scrimmage down)",
-    Phase.PAT_OR_TWO_DECISION: "extra point or two point conversion choice (no scrimmage down)",
+    Phase.AFTER_TOUCHDOWN_CHOICE: "after touchdown — choose extra point or two-point try (no scrimmage down)",
     Phase.EXTRA_POINT_ATTEMPT: "extra point (no scrimmage down)",
     Phase.TWO_POINT_ATTEMPT: "two point conversion (no scrimmage down)",
-    Phase.SAFETY_SEQUENCE: "safety sequence (not fully implemented)",
-    Phase.OVERTIME_START: "overtime (not fully implemented)",
+    Phase.SAFETY_SEQUENCE: "safety — confirm, then free kick from own yard line",
+    Phase.OVERTIME_START: "overtime — coin toss (then kick or receive)",
     Phase.GAME_OVER: "game over",
     Phase.PRE_GAME_COIN_TOSS: "pre-game",
 }
@@ -76,14 +80,18 @@ _TIMEOUT_PAUSE_STYLE = questionary.Style(
 def _render_header(console: Console, session: GameSession, state: GameState, phase: Phase) -> None:
     title = Text("Dart Football", style="bold white on dark_blue")
     pq = session.rules.structure.plays_per_quarter
-    q_plays = (
-        f"  ·  Q plays {state.clock.plays_in_quarter}/{pq}"
+    play_part = (
+        f"  ·  Play {state.clock.plays_in_quarter + 1}/{pq}"
         if pq > 0
         else ""
     )
+    q_disp = (
+        f"OT{state.overtime_period} · Q{state.clock.quarter}"
+        if state.overtime_period > 0
+        else f"Q{state.clock.quarter}"
+    )
     score = Text(
-        f"  Red {state.scores.red}  ·  Green {state.scores.green}  ·  Q{state.clock.quarter}{q_plays}  ·  "
-        f"plays {state.clock.total_plays}",
+        f"  Red {state.scores.red}  ·  Green {state.scores.green}  ·  {q_disp}{play_part}",
         style="white",
     )
     tbl = Table.grid(padding=(0, 1))
@@ -103,8 +111,7 @@ def _render_header(console: Console, session: GameSession, state: GameState, pha
         g_left = t.green_q1_q2 if first_half else t.green_q3_q4
         tbl.add_row(
             Text(
-                f"Timeouts (this half): Red {r_left}  ·  Green {g_left}  ·  "
-                "Timeout menu: you choose which team's timeout is charged; next play does not advance the play counter.",
+                f"Timeouts remaining: Red {r_left}  ·  Green {g_left}",
                 style="dim",
             )
         )
@@ -117,7 +124,9 @@ def _render_header(console: Console, session: GameSession, state: GameState, pha
                     style="white",
                 )
             )
-            tbl.add_row(format_field_visual(state, phase=phase))
+            tbl.add_row(
+                format_field_visual(state, phase=phase, large_field=session.large_field)
+            )
         else:
             tbl.add_row(
                 Text(
@@ -145,15 +154,48 @@ def _render_header(console: Console, session: GameSession, state: GameState, pha
                 style="magenta",
             )
         )
+    if phase is Phase.SCRIMMAGE_STRIP_DART:
+        eff = state.scrimmage_pending_offense_eff_segment
+        py = state.scrimmage_pending_offense_yards
+        tbl.add_row(
+            Text(
+                f"Strip dart: offense wedge {eff}, pending yards if color matches: {py}",
+                style="magenta",
+            )
+        )
     console.print(Panel(tbl, border_style="blue"))
 
 
+def _halftime_pause(console: Console) -> None:
+    console.print()
+    console.print(
+        Panel(
+            "[bold]Halftime.[/bold]\n\n"
+            "The first half is over. When you're ready, continue to the second half (3rd quarter).",
+            title="Halftime",
+            border_style="magenta",
+        )
+    )
+    questionary.select(
+        "Continue?",
+        choices=[
+            Choice("Continue", "continue"),
+        ],
+        style=_TIMEOUT_PAUSE_STYLE,
+    ).ask()
+
+
 def _apply(session: GameSession, event: Event, console: Console) -> None:
+    state_before, _ = session.current_state_phase()
+    q_before = state_before.clock.quarter
     out = session.apply(event)
     if isinstance(out, TransitionError):
         console.print(f"[red]error:[/red] {out.message}")
     else:
         console.print(f"[green]{out.effects_summary}[/green]")
+        state_after, _ = session.current_state_phase()
+        if q_before == 2 and state_after.clock.quarter == 3:
+            _halftime_pause(console)
 
 
 def _undo(session: GameSession, console: Console) -> None:
@@ -320,6 +362,11 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="Load session even if ruleset id/version does not match the rules file (risky)",
     )
+    p.add_argument(
+        "--large-field",
+        action="store_true",
+        help="Draw the multi-row proportional field with border (default: single-line field)",
+    )
     args = p.parse_args(argv)
 
     rules_path = Path(args.rules) if args.rules else default_ruleset_path()
@@ -339,12 +386,15 @@ def main(argv: list[str] | None = None) -> None:
         except ValueError as e:
             print(str(e), file=sys.stderr)
             sys.exit(1)
+        if args.large_field:
+            session = replace(session, large_field=True)
     else:
         session = GameSession.new(
             initial,
             Phase.PRE_GAME_COIN_TOSS,
             rules,
             rules_path=str(rules_path.resolve()),
+            large_field=args.large_field,
         )
     run_interactive(session)
 

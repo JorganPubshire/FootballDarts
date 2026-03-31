@@ -49,7 +49,7 @@ def test_opening_sequence_touchback(rules: RuleSet) -> None:
     # segments 1–5 → 1st & 10 at own 40
     assert o3.state.field.scrimmage_line == 40
     assert o3.state.field.goal_yard == 100
-    assert o3.state.clock.total_plays == 1
+    assert o3.state.clock.total_plays == 0
 
 
 def test_green_receive_touchback_spot(rules: RuleSet) -> None:
@@ -139,7 +139,7 @@ def test_timeout_before_kickoff_skips_kick_play_counter(rules: RuleSet) -> None:
     assert s.clock.total_plays == 0
     s = transition(s, Phase.KICKOFF_KICK, ChooseKickoffKind(onside=False), rules).state
     out = transition(s, Phase.KICKOFF_KICK, KickoffKick(segment=10), rules)
-    # Segment 9–12: mandatory return dart; play counter advances when return finishes.
+    # Segment 9–12: mandatory return dart; kickoffs do not advance the play counter.
     assert out.phase == Phase.KICKOFF_RETURN_DART
     assert out.state.clock.total_plays == 0
     assert out.state.skip_next_play_clock_bump

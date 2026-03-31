@@ -83,6 +83,13 @@ class ScrimmageDefense:
 
 
 @dataclass(frozen=True)
+class ScrimmageStripDart:
+    """After defense green bull vs offense numbered wedge: second dart for wedge-color strip rule."""
+
+    segment: int
+
+
+@dataclass(frozen=True)
 class FourthDownChoice:
     """Fourth down: go for it, punt, or field goal (cannot punt on 1st — enforced by phase)."""
 
@@ -91,7 +98,47 @@ class FourthDownChoice:
 
 @dataclass(frozen=True)
 class FieldGoalOutcome:
+    """Legacy session format; new games use FieldGoalOffenseDart and related events."""
+
     kind: Literal["good", "miss", "blocked"]
+
+
+@dataclass(frozen=True)
+class FieldGoalOffenseDart:
+    """Kicker's FG try dart: where it landed on the board."""
+
+    zone: Literal["inner_triple", "outside_triples", "triple_ring", "green", "red"]
+    segment: int
+    """Wedge 1–20 (required for logging; bulls still use mapped segment in UI)."""
+
+
+@dataclass(frozen=True)
+class ChooseFieldGoalAfterGreen:
+    """After green bull on FG: real kick (then defense) vs fake (run, then defense)."""
+
+    real_kick: bool
+
+
+@dataclass(frozen=True)
+class FieldGoalFakeOffenseDart:
+    """Fake FG: yardage dart; wedge-number rules, no separate defense dart for offense."""
+
+    segment: int
+    double_ring: bool = False
+    triple_ring: bool = False
+    triple_inner: bool | None = None
+    bull: Literal["none", "green", "red"] = "none"
+
+
+@dataclass(frozen=True)
+class FieldGoalDefenseDart:
+    """Defense during FG sequence; green/red can block; numbered usually no effect."""
+
+    segment: int
+    bull: Literal["none", "green", "red"] = "none"
+    double_ring: bool = False
+    triple_ring: bool = False
+    triple_inner: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -101,7 +148,7 @@ class PuntKick:
 
 
 @dataclass(frozen=True)
-class ChoosePatOrTwo:
+class ChooseExtraPointOrTwo:
     """After TD: attempt 1-pt kick or 2-pt conversion."""
 
     extra_point: bool
@@ -109,7 +156,7 @@ class ChoosePatOrTwo:
 
 @dataclass(frozen=True)
 class ExtraPointOutcome:
-    """PAT dart resolved to made or miss."""
+    """Extra point dart resolved to made or miss."""
 
     good: bool
 
@@ -119,6 +166,11 @@ class TwoPointOutcome:
     """2PC dart resolved to good or no score."""
 
     good: bool
+
+
+@dataclass(frozen=True)
+class ConfirmSafetyKickoff:
+    """After a safety is scored: proceed to the free kick (from the kicking team's own yard line)."""
 
 
 @dataclass(frozen=True)
@@ -141,11 +193,17 @@ Event = (
     | KickoffReturnKick
     | ScrimmageOffense
     | ScrimmageDefense
+    | ScrimmageStripDart
     | FourthDownChoice
     | FieldGoalOutcome
+    | FieldGoalOffenseDart
+    | ChooseFieldGoalAfterGreen
+    | FieldGoalFakeOffenseDart
+    | FieldGoalDefenseDart
     | PuntKick
-    | ChoosePatOrTwo
+    | ChooseExtraPointOrTwo
     | ExtraPointOutcome
     | TwoPointOutcome
+    | ConfirmSafetyKickoff
     | CallTimeout
 )

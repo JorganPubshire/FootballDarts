@@ -30,19 +30,17 @@ def yards_to_opponent_goal_line(offense: TeamId, field: FieldPosition) -> int:
 
 def format_line_of_scrimmage(offense: TeamId, field: FieldPosition) -> str:
     """
-    Standard phrasing: own territory as 'Red 35'; opponent territory as
-    \"Green's 40-yard line\" from the defense's perspective.
+    Names the line to match ``field_visual``: Green goal on the left (yard 0),
+    Red goal on the right (yard 100). ``scrimmage_line`` is that same 0–100
+    axis. The ``offense`` argument is kept for call-site consistency but does
+    not change the label (same spot is the same line for both teams).
     """
-    y = yards_from_own_goal(offense, field)
-    name = team_display_name(offense)
-    if y < 50:
-        return f"{name} {y}"
-    if y == 50:
+    p = field.scrimmage_line
+    if p == 50:
         return "Midfield (50-yard line)"
-    opp = opponent(offense)
-    opp_name = team_display_name(opp)
-    opp_yard = 100 - y
-    return f"{opp_name}'s {opp_yard}-yard line"
+    if p < 50:
+        return f"Green {p}"
+    return f"Red {100 - p}"
 
 
 def format_distance_to_goal(offense: TeamId, field: FieldPosition) -> str:

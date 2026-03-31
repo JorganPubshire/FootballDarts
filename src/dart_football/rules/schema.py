@@ -8,7 +8,7 @@ class ScoringRules:
     touchdown: int = 6
     field_goal: int = 3
     safety: int = 2
-    pat: int = 1
+    extra_point: int = 1
     two_point: int = 2
 
 
@@ -116,13 +116,24 @@ class PuntRules:
 
 
 @dataclass(frozen=True)
-class PatRules:
-    pat_advances_game_clock: bool = False
+class AfterTouchdownRules:
+    """Clock behavior after a touchdown, before kickoff."""
+
+    extra_point_attempt_advances_game_clock: bool = False
+
+
+@dataclass(frozen=True)
+class SafetyRules:
+    """After a safety: scoring team gets ``scoring.safety`` pts; free kick from kicker's own yard."""
+
+    free_kick_own_yard: int = 20
 
 
 @dataclass(frozen=True)
 class OvertimeRules:
     enabled: bool = False
+    #: ``none`` — same as regulation (not recommended). ``first_score`` — first lead after OT starts ends the game
+    #: at the next kickoff phase (after PAT if applicable).
     template: str = "none"
 
 
@@ -153,8 +164,8 @@ class ThrowMarkers:
     field_goal_line: str = (
         "Use the field goal / placekick throwing position for FG attempts on your layout."
     )
-    pat_line: str = (
-        "Use the extra-point (PAT) throwing line: the short kick / PAT marker on your layout."
+    extra_point_line: str = (
+        "Use the extra-point kicking line: the short kick marker on your Football Darts layout."
     )
     two_point_line: str = (
         "Use the two-point conversion throwing position on your Football Darts layout."
@@ -175,8 +186,9 @@ class RuleSet:
     scrimmage: ScrimmageRules = field(default_factory=ScrimmageRules)
     field_goal: FieldGoalRules = field(default_factory=FieldGoalRules)
     punt: PuntRules = field(default_factory=PuntRules)
-    pat: PatRules = field(default_factory=PatRules)
+    after_touchdown: AfterTouchdownRules = field(default_factory=AfterTouchdownRules)
     overtime: OvertimeRules = field(default_factory=OvertimeRules)
+    safety: SafetyRules = field(default_factory=SafetyRules)
     throw_markers: ThrowMarkers = field(default_factory=ThrowMarkers)
 
     def __post_init__(self) -> None:

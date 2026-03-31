@@ -12,14 +12,18 @@ from rich.panel import Panel
 
 from dart_football.display import dart_help, team_display_name
 from dart_football.engine.events import (
+    ConfirmSafetyKickoff,
+    ChooseFieldGoalAfterGreen,
     ChooseKickoffKind,
     ChooseKickoffTouchbackOrRun,
     ChooseKickOrReceive,
-    ChoosePatOrTwo,
+    ChooseExtraPointOrTwo,
     CoinTossWinner,
     Event,
     ExtraPointOutcome,
-    FieldGoalOutcome,
+    FieldGoalDefenseDart,
+    FieldGoalFakeOffenseDart,
+    FieldGoalOffenseDart,
     FourthDownChoice,
     KickoffKick,
     KickoffReturnKick,
@@ -27,6 +31,7 @@ from dart_football.engine.events import (
     PuntKick,
     ScrimmageDefense,
     ScrimmageOffense,
+    ScrimmageStripDart,
     TwoPointOutcome,
 )
 from dart_football.engine.phases import Phase
@@ -108,10 +113,6 @@ def _collect_offense_rings(console: Console) -> tuple[bool, bool, bool | None] |
     if io is None:
         return None
     return False, True, io
-
-
-def _collect_defense_rings(console: Console) -> tuple[bool, bool, bool | None] | None:
-    return _collect_offense_rings(console)
 
 
 def _flow_kickoff_dart(
@@ -198,10 +199,14 @@ def _flow_kickoff_return(console: Console, rules: RuleSet, state: GameState) -> 
     seg = _read_int(console, f"Wedge number ({sc.segment_min}–{sc.segment_max}): ", sc.segment_min, sc.segment_max)
     if seg is None:
         return None
-    rings = _collect_offense_rings(console)
-    if rings is None:
-        return None
-    dr, tr, t_in = rings
+    # Wedges 13–20: double/triple affect return yards; 1–12 uses fixed +12 (rings ignored in engine).
+    if 13 <= seg <= 20:
+        rings = _collect_offense_rings(console)
+        if rings is None:
+            return None
+        dr, tr, t_in = rings
+    else:
+        dr, tr, t_in = False, False, None
     return KickoffReturnKick(
         segment=seg,
         double_ring=dr,
@@ -279,17 +284,131 @@ def _finish_scrimmage_defense_after_hit_kind(
     seg = _read_int(console, f"Wedge number ({sc.segment_min}–{sc.segment_max}): ", sc.segment_min, sc.segment_max)
     if seg is None:
         return None
-    rings = _collect_defense_rings(console)
+    # Defense yardage never uses double/triple; session may still log defaults.
+    return ScrimmageDefense(segment=seg, bull="none", double_ring=False, triple_ring=False, triple_inner=None)
+
+
+def _flow_field_goal_offense_dart(console: Console, rules: RuleSet, state: GameState) -> FieldGoalOffenseDart | None:
+    console.print(
+        Panel(
+            dart_help.field_goal_offense_dart_instructions(state, rules),
+            title="Field goal — kicker",
+            border_style="cyan",
+        )
+    )
+    hk = _prompt_hit_kind(console)
+    if hk is None:
+        return None
+    sc = rules.scrimmage
+    if hk == "green":
+        return FieldGoalOffenseDart(zone="green", segment=sc.bull_green_segment)
+    if hk == "red":
+        return FieldGoalOffenseDart(zone="red", segment=sc.bull_red_segment)
+    seg = _read_int(console, f"Wedge number ({sc.segment_min}–{sc.segment_max}): ", sc.segment_min, sc.segment_max)
+    if seg is None:
+        return None
+    loc = questionary.select(
+        "Where did it land for field goal rules?",
+        choices=[
+            Choice(
+                "Inside the triple ring — single/double between double and triple (not on triple scoring)",
+                "inner",
+            ),
+            Choice("On the triple scoring ring (inner or outer triple bed)", "triple"),
+            Choice("Outside the triple ring — outer wedge toward the double ring", "outside"),
+        ],
+        style=_Q_STYLE,
+    ).ask()
+    if loc is None:
+        return None
+    z: Literal["inner_triple", "outside_triples", "triple_ring"]
+    if loc == "inner":
+        z = "inner_triple"
+    elif loc == "triple":
+        z = "triple_ring"
+    else:
+        z = "outside_triples"
+    return FieldGoalOffenseDart(zone=z, segment=seg)
+
+
+def _flow_field_goal_fake_offense(console: Console, rules: RuleSet, state: GameState) -> FieldGoalFakeOffenseDart | None:
+    console.print(
+        Panel(
+            dart_help.field_goal_fake_offense_instructions(state, rules),
+            title="Fake field goal",
+            border_style="cyan",
+        )
+    )
+    hk = _prompt_hit_kind(console)
+    if hk is None:
+        return None
+    sc = rules.scrimmage
+    if hk == "green":
+        return FieldGoalFakeOffenseDart(segment=sc.bull_green_segment, bull="green")
+    if hk == "red":
+        return FieldGoalFakeOffenseDart(segment=sc.bull_red_segment, bull="red")
+    seg = _read_int(console, f"Wedge number ({sc.segment_min}–{sc.segment_max}): ", sc.segment_min, sc.segment_max)
+    if seg is None:
+        return None
+    rings = _collect_offense_rings(console)
     if rings is None:
         return None
     dr, tr, t_in = rings
-    return ScrimmageDefense(
+    return FieldGoalFakeOffenseDart(
+        segment=seg,
+        double_ring=dr,
+        triple_ring=tr,
+        triple_inner=t_in,
+        bull="none",
+    )
+
+
+def _finish_field_goal_defense_after_hit_kind(
+    console: Console,
+    rules: RuleSet,
+    state: GameState,
+    hk: Literal["wedge", "green", "red"],
+) -> FieldGoalDefenseDart | None:
+    sc = rules.scrimmage
+    if hk == "green":
+        return FieldGoalDefenseDart(
+            segment=sc.bull_green_segment,
+            bull="green",
+        )
+    if hk == "red":
+        return FieldGoalDefenseDart(
+            segment=sc.bull_red_segment,
+            bull="red",
+        )
+    seg = _read_int(console, f"Wedge number ({sc.segment_min}–{sc.segment_max}): ", sc.segment_min, sc.segment_max)
+    if seg is None:
+        return None
+    rings = _collect_offense_rings(console)
+    if rings is None:
+        return None
+    dr, tr, t_in = rings
+    return FieldGoalDefenseDart(
         segment=seg,
         bull="none",
         double_ring=dr,
         triple_ring=tr,
         triple_inner=t_in,
     )
+
+
+def _flow_scrimmage_strip_dart(console: Console, rules: RuleSet, state: GameState) -> ScrimmageStripDart | None:
+    console.print(
+        Panel(
+            dart_help.scrimmage_strip_instructions(rules, state),
+            title="Strip dart — numbered wedge only",
+            border_style="cyan",
+        )
+    )
+    sc = rules.scrimmage
+    seg = _read_int(console, f"Wedge number ({sc.segment_min}–{sc.segment_max}): ", sc.segment_min, sc.segment_max)
+    if seg is None:
+        return None
+    return ScrimmageStripDart(segment=seg)
 
 
 def _flow_punt(console: Console, rules: RuleSet, state: GameState) -> PuntKick | None:
@@ -616,6 +735,12 @@ def prompt_play_event(
             return None
         return ("event", ev)
 
+    if phase is Phase.SCRIMMAGE_STRIP_DART:
+        ev = _flow_scrimmage_strip_dart(console, rules, state)
+        if ev is None:
+            return None
+        return ("event", ev)
+
     if phase is Phase.FOURTH_DOWN_DECISION:
         console.print(
             Panel("Fourth down — go for it, punt, or field goal.", title="4th down", border_style="cyan")
@@ -641,34 +766,102 @@ def prompt_play_event(
             return ("event", FourthDownChoice(kind="field_goal"))
         return None
 
-    if phase is Phase.FIELD_GOAL_ATTEMPT:
-        console.print(
-            Panel(
-                dart_help.field_goal_instructions(state, rules),
-                title="Field goal",
-                border_style="cyan",
-            )
-        )
+    if phase is Phase.FIELD_GOAL_OFFENSE_DART:
         choices = [
-            Choice("Good", "fg_good"),
-            Choice("Missed", "fg_miss"),
-            Choice("Blocked", "fg_block"),
+            Choice("Record kicker's field goal dart", "go"),
             Separator("─" * 48),
         ]
         choices.extend(meta)
-        pick = questionary.select("What was the result of the kick?", choices=choices, style=_Q_STYLE).ask()
+        pick = questionary.select("Field goal attempt", choices=choices, style=_Q_STYLE).ask()
         if pick is None:
             return None
         m = _dispatch_meta(str(pick))
         if m:
             return m
-        if pick == "fg_good":
-            return ("event", FieldGoalOutcome(kind="good"))
-        if pick == "fg_miss":
-            return ("event", FieldGoalOutcome(kind="miss"))
-        if pick == "fg_block":
-            return ("event", FieldGoalOutcome(kind="blocked"))
+        if pick == "go":
+            ev = _flow_field_goal_offense_dart(console, rules, state)
+            if ev is None:
+                return None
+            return ("event", ev)
         return None
+
+    if phase is Phase.FIELD_GOAL_GREEN_CHOICE:
+        console.print(
+            Panel(
+                dart_help.field_goal_green_choice_instructions(state, rules),
+                title="Field goal — after green bull",
+                border_style="cyan",
+            )
+        )
+        choices = [
+            Choice("Real field goal (then defense dart)", "fg_real"),
+            Choice("Fake field goal (yardage dart, then defense)", "fg_fake"),
+            Separator("─" * 48),
+        ]
+        choices.extend(meta)
+        pick = questionary.select("Real kick or fake?", choices=choices, style=_Q_STYLE).ask()
+        if pick is None:
+            return None
+        m = _dispatch_meta(str(pick))
+        if m:
+            return m
+        if pick == "fg_real":
+            return ("event", ChooseFieldGoalAfterGreen(real_kick=True))
+        if pick == "fg_fake":
+            return ("event", ChooseFieldGoalAfterGreen(real_kick=False))
+        return None
+
+    if phase is Phase.FIELD_GOAL_FAKE_OFFENSE:
+        choices = [
+            Choice("Record fake field goal yardage dart", "go"),
+            Separator("─" * 48),
+        ]
+        choices.extend(meta)
+        pick = questionary.select("Fake field goal", choices=choices, style=_Q_STYLE).ask()
+        if pick is None:
+            return None
+        m = _dispatch_meta(str(pick))
+        if m:
+            return m
+        if pick == "go":
+            ev = _flow_field_goal_fake_offense(console, rules, state)
+            if ev is None:
+                return None
+            return ("event", ev)
+        return None
+
+    if phase is Phase.FIELD_GOAL_DEFENSE:
+        console.print(
+            Panel(
+                dart_help.field_goal_defense_instructions(state, rules),
+                title="Field goal — defense",
+                border_style="cyan",
+            )
+        )
+        choices = [
+            Choice("Numbered wedge", "wedge"),
+            Choice("Green bull", "green"),
+            Choice("Red bull", "red"),
+            Separator("─" * 48),
+        ]
+        choices.extend(meta)
+        pick = questionary.select("Where did the defense dart land?", choices=choices, style=_Q_STYLE).ask()
+        if pick is None:
+            return None
+        ps = str(pick)
+        if ps.startswith("meta_"):
+            return _dispatch_meta(ps)
+        if ps not in ("wedge", "green", "red"):
+            return None
+        ev = _finish_field_goal_defense_after_hit_kind(
+            console,
+            rules,
+            state,
+            cast(Literal["wedge", "green", "red"], ps),
+        )
+        if ev is None:
+            return None
+        return ("event", ev)
 
     if phase is Phase.PUNT_ATTEMPT:
         choices = [
@@ -689,34 +882,40 @@ def prompt_play_event(
             return ("event", ev)
         return None
 
-    if phase is Phase.PAT_OR_TWO_DECISION:
+    if phase is Phase.AFTER_TOUCHDOWN_CHOICE:
         console.print(
             Panel(
-                "After a touchdown: choose an extra point or a two point conversion.",
+                "Choose a one-point kick or a two-point try.",
                 title="After touchdown",
                 border_style="cyan",
             )
         )
         choices = [
-            Choice("Extra point", "pat_1"),
-            Choice("Two point conversion", "pat_2"),
+            Choice("Extra point (one point)", "td_ep"),
+            Choice("Two-point conversion", "td_2pt"),
             Separator("─" * 48),
         ]
         choices.extend(meta)
-        pick = questionary.select("Extra point or two point conversion?", choices=choices, style=_Q_STYLE).ask()
+        pick = questionary.select("Which try after the touchdown?", choices=choices, style=_Q_STYLE).ask()
         if pick is None:
             return None
         m = _dispatch_meta(str(pick))
         if m:
             return m
-        if pick == "pat_1":
-            return ("event", ChoosePatOrTwo(extra_point=True))
-        if pick == "pat_2":
-            return ("event", ChoosePatOrTwo(extra_point=False))
+        if pick == "td_ep":
+            return ("event", ChooseExtraPointOrTwo(extra_point=True))
+        if pick == "td_2pt":
+            return ("event", ChooseExtraPointOrTwo(extra_point=False))
         return None
 
     if phase is Phase.EXTRA_POINT_ATTEMPT:
-        console.print(Panel(dart_help.pat_instructions(rules, state), title="Extra point", border_style="cyan"))
+        console.print(
+            Panel(
+                dart_help.extra_point_attempt_instructions(rules, state),
+                title="Extra point",
+                border_style="cyan",
+            )
+        )
         choices = [
             Choice("Good", "xpa_good"),
             Choice("No good (miss)", "xpa_bad"),
@@ -755,6 +954,55 @@ def prompt_play_event(
             return ("event", TwoPointOutcome(good=True))
         if pick == "tpc_bad":
             return ("event", TwoPointOutcome(good=False))
+        return None
+
+    if phase is Phase.SAFETY_SEQUENCE:
+        console.print(
+            Panel(
+                dart_help.safety_sequence_instructions(state, rules),
+                title="Safety",
+                border_style="magenta",
+            )
+        )
+        choices = [
+            Choice("Continue to safety free kick (kickoff phase)", "safety_go"),
+            Separator("─" * 48),
+        ]
+        choices.extend(meta)
+        pick = questionary.select("Safety — next step", choices=choices, style=_Q_STYLE).ask()
+        if pick is None:
+            return None
+        m = _dispatch_meta(str(pick))
+        if m:
+            return m
+        if pick == "safety_go":
+            return ("event", ConfirmSafetyKickoff())
+        return None
+
+    if phase is Phase.OVERTIME_START:
+        console.print(
+            Panel(
+                dart_help.overtime_start_instructions(state, rules),
+                title="Overtime",
+                border_style="magenta",
+            )
+        )
+        choices = [
+            Choice("Record overtime coin toss", "ot_toss"),
+            Separator("─" * 48),
+        ]
+        choices.extend(meta)
+        pick = questionary.select("Overtime", choices=choices, style=_Q_STYLE).ask()
+        if pick is None:
+            return None
+        m = _dispatch_meta(str(pick))
+        if m:
+            return m
+        if pick == "ot_toss":
+            ev = _flow_coin_toss_menu(console, rules)
+            if ev is None:
+                return None
+            return ("event", ev)
         return None
 
     if phase is Phase.GAME_OVER:
