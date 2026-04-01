@@ -58,7 +58,19 @@ def format_spot_band_lines(
             )
         elif b.kind == "wedge_times":
             assert b.multiplier is not None
-            if b.requires_return_dart:
+            if kickoff_field_prefixes:
+                if b.requires_return_dart:
+                    lines.append(
+                        f"  Segments {segs}: wedge ×{b.multiplier} = yards from the kick tee toward the "
+                        "kicker's scoring goal (Red kicker toward the Red goal, Green kicker toward the Green goal); "
+                        "possession flips to the receiver at that spot, then mandatory return dart."
+                    )
+                else:
+                    lines.append(
+                        f"  Segments {segs}: wedge ×{b.multiplier} = yards from the tee toward the kicker's "
+                        "scoring goal; ball spotted for the receiver (no return dart in this band)."
+                    )
+            elif b.requires_return_dart:
                 lines.append(
                     f"  Segments {segs}: {b.multiplier}x yards, receiver gets a return dart."
                 )
@@ -107,9 +119,12 @@ def _kickoff_thrower_line(state: GameState | None) -> list[str]:
             "Kickoff kicker missing from game state.",
         ]
     k = state.kickoff_kicker
-    return [
+    out = [
         f"Thrower: {team_display_name(k)} is the kickoff kicker — only that player throws this dart.",
     ]
+    if state.offense == k:
+        out.append(f"Ball at kickoff tee: {format_line_of_scrimmage(k, state.field)}.")
+    return out
 
 
 def _offense_thrower_line(state: GameState | None) -> list[str]:
@@ -152,7 +167,9 @@ def kickoff_instructions(rules: RuleSet, state: GameState | None = None) -> str:
         "",
         tm.kickoff_line,
         "",
-        f"Numbered wedges: yardage uses dart number ×{km} where noted; ignore doubles/triples on the kick dart unless a return dart applies.",
+        f"Numbered wedges (×{km} bands): travel yards from the kickoff tee toward the kicker's scoring goal "
+        "(the end that team attacks). Possession switches to the receiving team at the resulting spot before "
+        "any return dart. Ignore doubles/triples on the kick dart unless a return dart applies.",
         "",
         *format_spot_band_lines(
             rules.kickoff.bands,
@@ -279,10 +296,6 @@ def scrimmage_offense_instructions(
             f"If you hit the green bull, rules may map to wedge {sc.bull_green_segment}; "
             f"red bull to wedge {sc.bull_red_segment} (legacy table mode).",
         ]
-    lines += [
-        "",
-        "If you hit the triple ring, say whether it was the inner (smaller) or outer (larger) treble.",
-    ]
     return "\n".join(lines)
 
 
@@ -491,7 +504,7 @@ def field_goal_defense_instructions(state: GameState, rules: RuleSet) -> str:
             "",
             "Green bull: block — effects depend on whether this was a real try or a fake (see on-screen result).",
             "Red bull: block — defensive touchdown on a real try; on a fake, ball at the line of scrimmage.",
-            "Numbered wedge: choose ring (single / double / triple / inner vs outer triple) for the record; it may not change the outcome.",
+            "Numbered wedge: choose ring (single / double / triple) for the record; it may not change the outcome.",
             "",
             extra,
         ]

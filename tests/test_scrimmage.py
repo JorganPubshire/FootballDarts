@@ -378,6 +378,35 @@ def test_fourth_down_field_goal_then_kickoff(rules: RuleSet) -> None:
     assert o2.state.field.goal_yard == 100
 
 
+def test_fourth_down_scrimmage_play_delegates_to_offense(rules: RuleSet) -> None:
+    """FOURTH_DOWN_DECISION accepts ScrimmageOffense like SCRIMMAGE_OFFENSE (same handler)."""
+    s0 = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(25, 100),
+        downs=DownAndDistance(4, 10, 25),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
+    o1 = transition(s0, Phase.FOURTH_DOWN_DECISION, ScrimmageOffense(5, False, False), rules)
+    assert o1.phase == Phase.SCRIMMAGE_DEFENSE
+    assert o1.state.scrimmage_pending_offense_yards == 5
+
+
+def test_fourth_down_legacy_go_choice_still_goes_to_scrimmage_offense_phase(rules: RuleSet) -> None:
+    """Saved sessions / API may still use FourthDownChoice(kind='go')."""
+    s0 = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(25, 100),
+        downs=DownAndDistance(4, 10, 25),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
+    o = transition(s0, Phase.FOURTH_DOWN_DECISION, FourthDownChoice(kind="go"), rules)
+    assert o.phase == Phase.SCRIMMAGE_OFFENSE
+
+
 def test_fourth_down_punt(rules: RuleSet) -> None:
     s0 = GameState(
         scores=Scoreboard(),

@@ -54,6 +54,7 @@ class KickoffReturnKick:
     segment: int
     double_ring: bool = False
     triple_ring: bool = False
+    # Optional; loaded sessions may still have inner/outer for display in summaries.
     triple_inner: bool | None = None
     bull: Literal["none", "green", "red"] = "none"
 
@@ -65,7 +66,7 @@ class ScrimmageOffense:
     segment: int
     double_ring: bool = False
     triple_ring: bool = False
-    # If triple_ring: True = inner treble, False = outer treble (log / future rules).
+    # Optional legacy log detail; UI no longer distinguishes inner vs outer treble.
     triple_inner: bool | None = None
     bull: Literal["none", "green", "red"] = "none"
 
@@ -79,7 +80,7 @@ class ScrimmageDefense:
     # Ignored for yardage; recorded for the session log.
     double_ring: bool = False
     triple_ring: bool = False
-    triple_inner: bool | None = None
+    triple_inner: bool | None = None  # legacy inner/outer treble log only
 
 
 @dataclass(frozen=True)

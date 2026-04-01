@@ -9,7 +9,9 @@ from dart_football.engine.state import DownAndDistance, FieldPosition, GameState
 from dart_football.engine.transitions.clock_and_timeouts import kickoff_resolve_timeout_state
 from dart_football.engine.transitions.field_geometry import (
     field_from_spot_band,
+    field_position_on_axis_for_team,
     kickoff_green_bull_recovery_field,
+    kickoff_landing_yard_toward_kicker_scoring_goal,
     match_spot_band_for_segment,
     receiver_goal_line_field_position,
 )
@@ -173,6 +175,12 @@ def apply_kickoff_dart(
     if band is None:
         return TransitionError(f"no kickoff band for segment {seg}", ("KickoffKick",))
 
+    def field_after_kickoff_wedge_travel() -> FieldPosition:
+        assert band.kind == "wedge_times" and band.multiplier is not None
+        travel = seg * band.multiplier
+        land_y = kickoff_landing_yard_toward_kicker_scoring_goal(kicker, travel)
+        return field_position_on_axis_for_team(receiver, land_y)
+
     if not onside_attempt and band.kind == "touchback" and band.allow_runout_choice:
         assert band.touchback_line is not None
         goal = receiver_goal_line_field_position(receiver)
@@ -193,7 +201,7 @@ def apply_kickoff_dart(
         )
 
     if not onside_attempt and band.kind == "wedge_times" and band.requires_return_dart:
-        field = field_from_spot_band(receiver, band, seg)
+        field = field_after_kickoff_wedge_travel()
         downs = DownAndDistance(1, 10, field.scrimmage_line)
         s = replace(
             state,
@@ -211,7 +219,11 @@ def apply_kickoff_dart(
         )
 
     st = kickoff_resolve_timeout_state(state)
-    field = field_from_spot_band(receiver, band, seg)
+    field = (
+        field_after_kickoff_wedge_travel()
+        if band.kind == "wedge_times"
+        else field_from_spot_band(receiver, band, seg)
+    )
     downs = DownAndDistance(down=1, to_go=10, los_yard=field.scrimmage_line)
     s = replace(
         st,

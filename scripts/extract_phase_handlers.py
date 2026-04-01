@@ -1,4 +1,5 @@
 """One-off helper: split transition_core phase blocks into handler functions. Run from repo root."""
+
 from __future__ import annotations
 
 import re
@@ -49,7 +50,6 @@ def main() -> None:
     i = body_start
     while i < len(lines) and not PHASE_LINE.match(lines[i]):
         i += 1
-    timeout_block = lines[body_start:i]
     phase_lines: list[tuple[str, int]] = []
     j = i
     while j < len(lines):

@@ -190,6 +190,20 @@ def test_kickoff_segment_13_run_out_wedge_5(rules: RuleSet) -> None:
     assert o3.state.field.scrimmage_line == 25
 
 
+def test_kickoff_red_kicker_wedge_travel_then_return(rules: RuleSet) -> None:
+    """Wedge×5 from Red's tee moves toward the Red goal (higher field yard); Green returns from that spot."""
+    s0 = GameState.new_game(timeouts_per_half=rules.structure.timeouts_per_half)
+    s = transition(s0, Phase.PRE_GAME_COIN_TOSS, CoinTossWinner(TeamId.RED), rules).state
+    s = transition(s, Phase.CHOOSE_KICK_OR_RECEIVE, ChooseKickOrReceive(kick=True), rules).state
+    s = transition(s, Phase.KICKOFF_KICK, ChooseKickoffKind(onside=False), rules).state
+    o = transition(s, Phase.KICKOFF_KICK, KickoffKick(segment=10), rules)
+    assert o.phase == Phase.KICKOFF_RETURN_DART
+    assert o.state.offense == TeamId.GREEN
+    assert o.state.field == FieldPosition(85, 0)
+    o2 = transition(o.state, Phase.KICKOFF_RETURN_DART, KickoffReturnKick(segment=4), rules)
+    assert o2.state.field.scrimmage_line == 73
+
+
 def test_kickoff_segment_10_then_return(rules: RuleSet) -> None:
     s0 = GameState.new_game(timeouts_per_half=rules.structure.timeouts_per_half)
     s = transition(s0, Phase.PRE_GAME_COIN_TOSS, CoinTossWinner(TeamId.RED), rules).state
@@ -197,10 +211,13 @@ def test_kickoff_segment_10_then_return(rules: RuleSet) -> None:
     s = transition(s, Phase.KICKOFF_KICK, ChooseKickoffKind(onside=False), rules).state
     o = transition(s, Phase.KICKOFF_KICK, KickoffKick(segment=10), rules)
     assert o.phase == Phase.KICKOFF_RETURN_DART
-    assert o.state.field.scrimmage_line == 50
+    # Green kicks from 65; wedge×5 travel toward Green goal: 65 − 50 = 15. Red ball at yard 15.
+    assert o.state.field.scrimmage_line == 15
+    assert o.state.offense == TeamId.RED
     o2 = transition(o.state, Phase.KICKOFF_RETURN_DART, KickoffReturnKick(segment=4), rules)
     assert o2.phase == Phase.SCRIMMAGE_OFFENSE
-    assert o2.state.field.scrimmage_line == 62
+    # Return wedges 1–12: +12 toward Red goal from scrimmage 15.
+    assert o2.state.field.scrimmage_line == 27
 
 
 def test_plays_per_quarter_advances_quarter(rules: RuleSet) -> None:

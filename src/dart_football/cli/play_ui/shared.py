@@ -14,6 +14,7 @@ from dart_football.display import dart_help, team_display_name
 from dart_football.engine.events import CoinTossWinner
 from dart_football.engine.phases import Phase
 from dart_football.engine.state import GameState, TeamId
+from dart_football.engine.transitions.field_goal_and_punt import sixty_yard_field_goal_line_ok
 from dart_football.rules.schema import RuleSet
 
 QUESTIONARY_STYLE = questionary.Style(
@@ -33,6 +34,13 @@ MetaAction = Literal["undo", "save", "history", "quit", "timeout"]
 def field_goal_in_range(state: GameState, rules: RuleSet) -> bool:
     dist = abs(state.field.goal_yard - state.field.scrimmage_line)
     return dist <= rules.field_goal.max_distance_yards
+
+
+def field_goal_attempt_allowed(state: GameState, rules: RuleSet) -> bool:
+    """True when the engine would accept a field goal declaration (distance cap + 60-yd own-40–49 rule)."""
+    if not field_goal_in_range(state, rules):
+        return False
+    return sixty_yard_field_goal_line_ok(state)
 
 
 def read_int(console: Console, prompt: str, lo: int, hi: int) -> int | None:
@@ -79,17 +87,8 @@ def collect_offense_rings(console: Console) -> tuple[bool, bool, bool | None] | 
         return False, False, None
     if r == "double":
         return True, False, None
-    io = questionary.select(
-        "Inner or outer triple?",
-        choices=[
-            Choice("Inner triple", True),
-            Choice("Outer triple", False),
-        ],
-        style=QUESTIONARY_STYLE,
-    ).ask()
-    if io is None:
-        return None
-    return False, True, io
+    # Single treble ring on the board — apply triple multiplier with no inner/outer distinction.
+    return False, True, None
 
 
 def meta_choices_for_phase(phase: Phase) -> list[Choice[str]]:

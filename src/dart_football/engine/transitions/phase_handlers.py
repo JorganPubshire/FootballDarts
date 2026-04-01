@@ -357,8 +357,13 @@ def handle_fourth_down_decision(
     event: Event,
     rules: RuleSet,
 ) -> TransitionOk | TransitionError:
+    if isinstance(event, ScrimmageOffense):
+        return handle_scrimmage_offense(state, event, rules)
     if not isinstance(event, FourthDownChoice):
-        return TransitionError("expected fourth-down choice", ("FourthDownChoice",))
+        return TransitionError(
+            "expected fourth-down choice or scrimmage offense dart",
+            ("FourthDownChoice", "ScrimmageOffense"),
+        )
     if event.kind == "go":
         return TransitionOk(state, Phase.SCRIMMAGE_OFFENSE, "Going for it on 4th down")
     if event.kind == "punt":

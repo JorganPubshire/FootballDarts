@@ -35,7 +35,8 @@ segment_min = 1
 segment_max = 20
 kickoff_yard_multiplier = 5
 
-# Kickoffs — receiving team outcomes.
+# Kickoffs — touchback/field bands are receiving-team spots. Wedge×5 bands: travel from the kick tee
+# toward the kicker's scoring goal (Red toward yard 100, Green toward 0), then receiver possession.
 # 20–16: out of end zone → 1st & 10 at own 35.
 [[kickoff.bands]]
 segments = [16, 17, 18, 19, 20]

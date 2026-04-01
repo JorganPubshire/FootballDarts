@@ -26,7 +26,7 @@ from dart_football.cli.play_ui.flows import (
 from dart_football.cli.play_ui.shared import (
     QUESTIONARY_STYLE,
     MetaAction,
-    field_goal_in_range,
+    field_goal_attempt_allowed,
     meta_choices_for_phase,
     prompt_coin_toss_menu,
 )
@@ -225,7 +225,7 @@ def prompt_play_event(
         if state.downs.down >= 2:
             choices.append(Choice("Punt", "fd_punt"))
         fg_on_allowed_down = state.downs.down in (3, 4) or state.last_play_of_period
-        if fg_on_allowed_down and field_goal_in_range(state, rules):
+        if fg_on_allowed_down and field_goal_attempt_allowed(state, rules):
             choices.append(Choice("Field goal", "fd_fg"))
         choices.append(Separator("─" * 48))
         choices.extend(meta)
@@ -284,19 +284,30 @@ def prompt_play_event(
         return ("event", ev)
 
     if phase is Phase.FOURTH_DOWN_DECISION:
+        fg_ok = field_goal_attempt_allowed(state, rules)
+        panel_body = (
+            "Fourth down — scrimmage play, punt, or field goal."
+            if fg_ok
+            else (
+                f"Fourth down — scrimmage play or punt. "
+                f"No field goal from this spot (must be within {rules.field_goal.max_distance_yards} yards "
+                "of the goal, with the ruleset’s 60-yard attempt restrictions)."
+            )
+        )
         console.print(
             Panel(
-                "Fourth down — go for it, punt, or field goal.",
+                panel_body,
                 title="4th down",
                 border_style="cyan",
             )
         )
         choices = [
-            Choice("Go for it", "fd_go"),
+            Choice("Scrimmage play", "off_scrim"),
             Choice("Punt", "fd_punt"),
-            Choice("Field goal", "fd_fg"),
-            Separator("─" * 48),
         ]
+        if fg_ok:
+            choices.append(Choice("Field goal", "fd_fg"))
+        choices.append(Separator("─" * 48))
         choices.extend(meta)
         pick = questionary.select(
             "What do you call on 4th down?", choices=choices, style=QUESTIONARY_STYLE
@@ -306,8 +317,11 @@ def prompt_play_event(
         m = dispatch_meta_action(str(pick))
         if m:
             return m
-        if pick == "fd_go":
-            return ("event", FourthDownChoice(kind="go"))
+        if pick == "off_scrim":
+            ev = prompt_scrimmage_offense_event(console, rules, state)
+            if ev is None:
+                return None
+            return ("event", ev)
         if pick == "fd_punt":
             return ("event", FourthDownChoice(kind="punt"))
         if pick == "fd_fg":

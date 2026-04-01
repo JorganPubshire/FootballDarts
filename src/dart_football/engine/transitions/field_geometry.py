@@ -19,6 +19,31 @@ def kickoff_tee_down_and_distance(kicker: TeamId) -> DownAndDistance:
     return DownAndDistance(1, 10, fp.scrimmage_line)
 
 
+def kickoff_landing_yard_toward_kicker_scoring_goal(kicker: TeamId, travel_yards: int) -> int:
+    """
+    Where the ball rests on the 0–100 axis after a kick dart.
+
+    Travel is measured from the kickoff tee toward the **kicker's scoring goal** (the end zone
+    that team attacks in regulation): Red kicker moves toward yard 100, Green kicker toward 0.
+    This matches wedge × multiplier as downfield yards from the tee in that direction; the
+    receiving team then takes possession at that spot before any return dart.
+    """
+    tee = kickoff_tee_field_position(kicker).scrimmage_line
+    if kicker is TeamId.RED:
+        y = tee + travel_yards
+    else:
+        y = tee - travel_yards
+    return max(0, min(100, y))
+
+
+def field_position_on_axis_for_team(team: TeamId, yard_on_axis: int) -> FieldPosition:
+    """Build offense field state at absolute yard ``yard_on_axis`` (0 = Green goal, 100 = Red goal)."""
+    y = max(0, min(100, yard_on_axis))
+    if team is TeamId.RED:
+        return FieldPosition(y, 100)
+    return FieldPosition(y, 0)
+
+
 def field_spot_from_own_yard(receiver: TeamId, own_yard: int) -> FieldPosition:
     if own_yard < 1 or own_yard > 99:
         raise ValueError("own_yard must be 1..99")

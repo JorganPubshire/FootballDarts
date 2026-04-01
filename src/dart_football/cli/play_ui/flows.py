@@ -261,7 +261,7 @@ def prompt_field_goal_offense_dart_event(
                 "Inside the triple ring — single/double between double and triple (not on triple scoring)",
                 "inner",
             ),
-            Choice("On the triple scoring ring (inner or outer triple bed)", "triple"),
+            Choice("On the triple scoring ring", "triple"),
             Choice("Outside the triple ring — outer wedge toward the double ring", "outside"),
         ],
         style=QUESTIONARY_STYLE,
