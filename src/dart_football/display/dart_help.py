@@ -49,9 +49,7 @@ def format_spot_band_lines(
                     "or run out from the goal line."
                 )
             else:
-                lines.append(
-                    f"  Segments {segs}: {tpre}1st & 10 at own {b.touchback_line}."
-                )
+                lines.append(f"  Segments {segs}: {tpre}1st & 10 at own {b.touchback_line}.")
         elif b.kind == "field":
             assert b.field_yard_from_receiving_goal is not None
             pre = _kickoff_field_outcome_prefix(b.segments) if kickoff_field_prefixes else ""
@@ -62,11 +60,10 @@ def format_spot_band_lines(
             assert b.multiplier is not None
             if b.requires_return_dart:
                 lines.append(
-                    f"  Segments {segs}: {b.multiplier}x yards, receiver gets a return dart.")
-            else:
-                lines.append(
-                    f"  Segments {segs}: {b.multiplier}x yards."
+                    f"  Segments {segs}: {b.multiplier}x yards, receiver gets a return dart."
                 )
+            else:
+                lines.append(f"  Segments {segs}: {b.multiplier}x yards.")
         elif b.kind == "wedge_times_penalty":
             assert b.multiplier is not None and b.penalty_yards is not None
             lines.append(
@@ -221,7 +218,7 @@ def kickoff_return_instructions(rules: RuleSet, state: GameState | None = None) 
         lines.append("")
     lines += [
         "From the current spot toward the far goal:",
-        f"  Wedges 1–12: +12 yards.",
+        "  Wedges 1–12: +12 yards.",
         f"  Wedges 13–20: wedge ×1, then ×{sc.double_multiplier} double / ×{sc.triple_multiplier} triple on D/T.",
         "  Green bull: +50 yards.",
         "  Red bull: touchdown (receiving team).",
@@ -246,7 +243,9 @@ def onside_kick_instructions(rules: RuleSet, state: GameState | None = None) -> 
     return head + kickoff_instructions(rules, state)
 
 
-def scrimmage_offense_instructions(rules: RuleSet, state: GameState | None = None, play_label: str = "Offense") -> str:
+def scrimmage_offense_instructions(
+    rules: RuleSet, state: GameState | None = None, play_label: str = "Offense"
+) -> str:
     sc = rules.scrimmage
     tm = rules.throw_markers
     lines = [
@@ -299,7 +298,11 @@ def scrimmage_defense_instructions(rules: RuleSet, state: GameState | None = Non
         "",
     ]
     if sc.use_wedge_number_yards:
-        kind = getattr(state, "scrimmage_pending_offense_kind", "none") if state is not None else "none"
+        kind = (
+            getattr(state, "scrimmage_pending_offense_kind", "none")
+            if state is not None
+            else "none"
+        )
         lines += [
             f"Defense wedge yardage uses the wedge number ({sc.segment_min}–{sc.segment_max}) ×1 only — "
             "ignore doubles and triples for yards.",
@@ -345,7 +348,6 @@ def scrimmage_defense_instructions(rules: RuleSet, state: GameState | None = Non
 
 
 def scrimmage_strip_instructions(rules: RuleSet, state: GameState | None = None) -> str:
-    sc = rules.scrimmage
     tm = rules.throw_markers
     eff = state.scrimmage_pending_offense_eff_segment if state is not None else None
     off_y = state.scrimmage_pending_offense_yards if state is not None else None
@@ -383,8 +385,8 @@ def punt_instructions(rules: RuleSet, state: GameState | None = None) -> str:
         "",
         *format_spot_band_lines(rules.punt.bands, "Punting team — wedge spots:"),
         "",
-        f"Green bull: fake punt — no gain; ball stays at the line of scrimmage and the down advances "
-        f"(turnover on downs if that was 4th down).",
+        "Green bull: fake punt — no gain; ball stays at the line of scrimmage and the down advances "
+        "(turnover on downs if that was 4th down).",
         "Red bull: blocked punt — defense takes over at the line of scrimmage.",
     ]
     return "\n".join(lines)
@@ -480,9 +482,7 @@ def field_goal_defense_instructions(state: GameState, rules: RuleSet) -> str:
             f"{rules.field_goal.miss_spot_offset_yards}."
         )
     elif pending == "fake_resolved":
-        extra = (
-            "If your dart has no special effect, the fake stays at the spot after the yardage dart (1st & 10 already set)."
-        )
+        extra = "If your dart has no special effect, the fake stays at the spot after the yardage dart (1st & 10 already set)."
     return "\n".join(
         [
             "Field goal — defense dart",

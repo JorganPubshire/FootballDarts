@@ -214,9 +214,7 @@ def _append_caption(
         if los_c == fd_c:
             caption = f"\n  {la} LOS & 1st-down {los} yd   ·   {downs.down} & {downs.to_go}"
         else:
-            caption = (
-                f"\n  {la} LOS {los} yd   ·   {fa} 1st-down line {fd} yd   ·   {downs.down} & {downs.to_go}"
-            )
+            caption = f"\n  {la} LOS {los} yd   ·   {fa} 1st-down line {fd} yd   ·   {downs.down} & {downs.to_go}"
     else:
         caption = f"\n  ● LOS {los} yd   ·   no scrimmage down & distance"
     out.append(caption, style="dim")
@@ -355,7 +353,9 @@ def _format_field_large(state: GameState, phase: Phase | None) -> Text:
     return out
 
 
-def format_field_visual(state: GameState, *, phase: Phase | None = None, large_field: bool = False) -> Text:
+def format_field_visual(
+    state: GameState, *, phase: Phase | None = None, large_field: bool = False
+) -> Text:
     """
     ``large_field=False`` (default): one grass row, arrows above/below when scrimmage.
     ``large_field=True``: multi-row depth from length/width proportion, bold white border.

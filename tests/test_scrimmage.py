@@ -15,7 +15,15 @@ from dart_football.engine.events import (
     ScrimmageStripDart,
 )
 from dart_football.engine.phases import Phase
-from dart_football.engine.state import DownAndDistance, FieldPosition, GameClock, GameState, Scoreboard, TeamId, Timeouts
+from dart_football.engine.state import (
+    DownAndDistance,
+    FieldPosition,
+    GameClock,
+    GameState,
+    Scoreboard,
+    TeamId,
+    Timeouts,
+)
 from dart_football.engine.transitions import TransitionError, transition
 from dart_football.rules.schema import RuleSet
 
@@ -73,7 +81,9 @@ def test_scrimmage_declare_fg_out_of_range(rules: RuleSet) -> None:
 
 
 def test_punt_not_on_first_down(rules: RuleSet) -> None:
-    o = transition(_red_ball_own_25(), Phase.SCRIMMAGE_OFFENSE, FourthDownChoice(kind="punt"), rules)
+    o = transition(
+        _red_ball_own_25(), Phase.SCRIMMAGE_OFFENSE, FourthDownChoice(kind="punt"), rules
+    )
     assert isinstance(o, TransitionError)
 
 
@@ -119,7 +129,9 @@ def test_offense_green_bull_defense_red_turnover_at_los(rules: RuleSet) -> None:
     br = rules.scrimmage.bull_red_segment
     s0 = _red_ball_own_25()
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(segment=bg, bull="green"), rules)
-    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules)
+    o2 = transition(
+        o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules
+    )
     assert o2.phase == Phase.SCRIMMAGE_OFFENSE
     assert o2.state.offense == TeamId.GREEN
     assert o2.state.field.scrimmage_line == 25
@@ -145,7 +157,9 @@ def test_offense_red_bull_defense_red_no_gain_at_los(rules: RuleSet) -> None:
     bg = rules.scrimmage.bull_green_segment
     s0 = _red_ball_own_25()
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(segment=br, bull="red"), rules)
-    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="red"), rules)
+    o2 = transition(
+        o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="red"), rules
+    )
     assert o2.state.offense == TeamId.RED
     assert o2.state.field.scrimmage_line == 25
     assert o2.state.downs.down == 2
@@ -155,7 +169,9 @@ def test_defense_green_bull_goes_to_strip_dart(rules: RuleSet) -> None:
     bg = rules.scrimmage.bull_green_segment
     s0 = _red_ball_own_25()
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
-    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="green"), rules)
+    o2 = transition(
+        o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="green"), rules
+    )
     assert o2.phase == Phase.SCRIMMAGE_STRIP_DART
     assert o2.state.scrimmage_pending_offense_yards == 5
     assert o2.state.scrimmage_pending_offense_eff_segment == 5
@@ -166,7 +182,9 @@ def test_strip_dart_matching_color_yards_then_turnover(rules: RuleSet) -> None:
     bg = rules.scrimmage.bull_green_segment
     s0 = _red_ball_own_25()
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
-    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="green"), rules)
+    o2 = transition(
+        o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="green"), rules
+    )
     o3 = transition(o2.state, Phase.SCRIMMAGE_STRIP_DART, ScrimmageStripDart(segment=1), rules)
     assert o3.phase == Phase.SCRIMMAGE_OFFENSE
     assert o3.state.offense == TeamId.GREEN
@@ -178,7 +196,9 @@ def test_strip_dart_mismatch_turnover_at_los(rules: RuleSet) -> None:
     bg = rules.scrimmage.bull_green_segment
     s0 = _red_ball_own_25()
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
-    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="green"), rules)
+    o2 = transition(
+        o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=bg, bull="green"), rules
+    )
     o3 = transition(o2.state, Phase.SCRIMMAGE_STRIP_DART, ScrimmageStripDart(segment=20), rules)
     assert o3.phase == Phase.SCRIMMAGE_OFFENSE
     assert o3.state.offense == TeamId.GREEN
@@ -190,7 +210,9 @@ def test_defense_red_bull_defensive_touchdown(rules: RuleSet) -> None:
     br = rules.scrimmage.bull_red_segment
     s0 = _red_ball_own_25()
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
-    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules)
+    o2 = transition(
+        o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules
+    )
     assert o2.phase == Phase.AFTER_TOUCHDOWN_CHOICE
     assert o2.state.scores.green == 6
 
@@ -206,7 +228,9 @@ def test_defense_red_bull_near_goal_defensive_td_not_offense_td(rules: RuleSet) 
         timeouts=Timeouts(3, 3, 3, 3),
     )
     o1 = transition(s0, Phase.SCRIMMAGE_OFFENSE, ScrimmageOffense(5, False, False), rules)
-    o2 = transition(o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules)
+    o2 = transition(
+        o1.state, Phase.SCRIMMAGE_DEFENSE, ScrimmageDefense(segment=br, bull="red"), rules
+    )
     assert o2.phase == Phase.AFTER_TOUCHDOWN_CHOICE
     assert o2.state.scores.green == 6
     assert o2.state.scores.red == 0
@@ -260,7 +284,9 @@ def test_touchdown_then_extra_point_then_kickoff(rules: RuleSet) -> None:
     assert o2.phase == Phase.AFTER_TOUCHDOWN_CHOICE
     assert o2.state.scores.red == 6
     assert o2.state.last_touchdown_team == TeamId.RED
-    o3 = transition(o2.state, Phase.AFTER_TOUCHDOWN_CHOICE, ChooseExtraPointOrTwo(extra_point=True), rules)
+    o3 = transition(
+        o2.state, Phase.AFTER_TOUCHDOWN_CHOICE, ChooseExtraPointOrTwo(extra_point=True), rules
+    )
     assert o3.phase == Phase.EXTRA_POINT_ATTEMPT
     o4 = transition(o3.state, Phase.EXTRA_POINT_ATTEMPT, ExtraPointOutcome(good=True), rules)
     assert o4.phase == Phase.KICKOFF_KICK

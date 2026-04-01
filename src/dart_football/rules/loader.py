@@ -5,14 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from dart_football.rules.schema import (
+    AfterTouchdownRules,
     FieldGoalRules,
     KickoffBand,
     KickoffRules,
     OvertimeRules,
-    AfterTouchdownRules,
-    SafetyRules,
     PuntRules,
     RuleSet,
+    SafetyRules,
     ScoringRules,
     ScrimmageRules,
     ScrimmageYardBand,
@@ -98,7 +98,9 @@ def _parse_kickoff_bands(data: dict[str, Any]) -> tuple[KickoffBand, ...]:
     return tuple(out)
 
 
-def _parse_scrimmage_yard_bands(table_key: str, data: dict[str, Any]) -> tuple[ScrimmageYardBand, ...]:
+def _parse_scrimmage_yard_bands(
+    table_key: str, data: dict[str, Any]
+) -> tuple[ScrimmageYardBand, ...]:
     bands_raw = data.get(table_key)
     if bands_raw is None:
         return ()
@@ -153,7 +155,9 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
             segment_min=int(k.get("segment_min", kickoff.segment_min)),
             segment_max=int(k.get("segment_max", kickoff.segment_max)),
             bands=_parse_kickoff_bands(k),
-            kickoff_yard_multiplier=int(k.get("kickoff_yard_multiplier", kickoff.kickoff_yard_multiplier)),
+            kickoff_yard_multiplier=int(
+                k.get("kickoff_yard_multiplier", kickoff.kickoff_yard_multiplier)
+            ),
         )
 
     scrimmage = ScrimmageRules()
@@ -183,7 +187,9 @@ def parse_rules_dict(raw: dict[str, Any]) -> RuleSet:
         field_goal = FieldGoalRules(
             distance_round_to=int(fg.get("distance_round_to", field_goal.distance_round_to)),
             max_distance_yards=int(fg.get("max_distance_yards", field_goal.max_distance_yards)),
-            miss_spot_offset_yards=int(fg.get("miss_spot_offset_yards", field_goal.miss_spot_offset_yards)),
+            miss_spot_offset_yards=int(
+                fg.get("miss_spot_offset_yards", field_goal.miss_spot_offset_yards)
+            ),
         )
 
     punt = PuntRules()

@@ -165,7 +165,9 @@ def test_kickoff_segment_13_touchback_at_35(rules: RuleSet) -> None:
     o = transition(s, Phase.KICKOFF_KICK, KickoffKick(segment=13), rules)
     assert o.phase == Phase.KICKOFF_RUN_OR_SPOT
     assert o.state.kickoff_pending_touchback_line == 35
-    o2 = transition(o.state, Phase.KICKOFF_RUN_OR_SPOT, ChooseKickoffTouchbackOrRun(take_touchback=True), rules)
+    o2 = transition(
+        o.state, Phase.KICKOFF_RUN_OR_SPOT, ChooseKickoffTouchbackOrRun(take_touchback=True), rules
+    )
     assert o2.phase == Phase.SCRIMMAGE_OFFENSE
     assert o2.state.offense == TeamId.RED
     assert o2.state.field.scrimmage_line == 35
@@ -178,7 +180,9 @@ def test_kickoff_segment_13_run_out_wedge_5(rules: RuleSet) -> None:
     s = transition(s, Phase.CHOOSE_KICK_OR_RECEIVE, ChooseKickOrReceive(kick=False), rules).state
     s = transition(s, Phase.KICKOFF_KICK, ChooseKickoffKind(onside=False), rules).state
     o = transition(s, Phase.KICKOFF_KICK, KickoffKick(segment=13), rules)
-    o2 = transition(o.state, Phase.KICKOFF_RUN_OR_SPOT, ChooseKickoffTouchbackOrRun(take_touchback=False), rules)
+    o2 = transition(
+        o.state, Phase.KICKOFF_RUN_OR_SPOT, ChooseKickoffTouchbackOrRun(take_touchback=False), rules
+    )
     assert o2.phase == Phase.KICKOFF_RUN_OUT_DART
     assert o2.state.field.scrimmage_line == 0
     o3 = transition(o2.state, Phase.KICKOFF_RUN_OUT_DART, KickoffRunOutKick(segment=5), rules)

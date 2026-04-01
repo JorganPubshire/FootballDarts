@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from dart_football.engine.events import ChooseKickoffKind, ChooseKickOrReceive, CoinTossWinner, KickoffKick
+from dart_football.engine.events import (
+    ChooseKickoffKind,
+    ChooseKickOrReceive,
+    CoinTossWinner,
+    KickoffKick,
+)
 from dart_football.engine.phases import Phase
 from dart_football.engine.session import GameSession
 from dart_football.engine.state import GameState, TeamId

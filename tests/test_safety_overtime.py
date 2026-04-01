@@ -12,7 +12,15 @@ from dart_football.engine.events import (
     ScrimmageOffense,
 )
 from dart_football.engine.phases import Phase
-from dart_football.engine.state import DownAndDistance, FieldPosition, GameClock, GameState, Scoreboard, TeamId, Timeouts
+from dart_football.engine.state import (
+    DownAndDistance,
+    FieldPosition,
+    GameClock,
+    GameState,
+    Scoreboard,
+    TeamId,
+    Timeouts,
+)
 from dart_football.engine.transitions import transition
 from dart_football.rules.schema import RuleSet
 
