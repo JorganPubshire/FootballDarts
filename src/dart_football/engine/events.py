@@ -28,8 +28,11 @@ class ChooseKickoffKind:
 
 @dataclass(frozen=True)
 class KickoffKick:
+    """Kickoff dart. ``miss`` means outer label ring / surround (0 yards of kick travel)."""
+
     segment: int
     bull: Literal["none", "green", "red"] = "none"
+    miss: bool = False
 
 
 @dataclass(frozen=True)
@@ -45,6 +48,7 @@ class KickoffRunOutKick:
 
     segment: int
     bull: Literal["none", "green", "red"] = "none"
+    miss: bool = False
 
 
 @dataclass(frozen=True)
@@ -57,11 +61,12 @@ class KickoffReturnKick:
     # Optional; loaded sessions may still have inner/outer for display in summaries.
     triple_inner: bool | None = None
     bull: Literal["none", "green", "red"] = "none"
+    miss: bool = False
 
 
 @dataclass(frozen=True)
 class ScrimmageOffense:
-    """Offense dart; D/T rings multiply base yards from rules."""
+    """Offense dart; D/T rings multiply base yards. ``miss``: outer label ring — 0 offensive yards."""
 
     segment: int
     double_ring: bool = False
@@ -69,6 +74,7 @@ class ScrimmageOffense:
     # Optional legacy log detail; UI no longer distinguishes inner vs outer treble.
     triple_inner: bool | None = None
     bull: Literal["none", "green", "red"] = "none"
+    miss: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,6 +87,7 @@ class ScrimmageDefense:
     double_ring: bool = False
     triple_ring: bool = False
     triple_inner: bool | None = None  # legacy inner/outer treble log only
+    miss: bool = False
 
 
 @dataclass(frozen=True)
@@ -106,11 +113,11 @@ class FieldGoalOutcome:
 
 @dataclass(frozen=True)
 class FieldGoalOffenseDart:
-    """Kicker's FG try dart: where it landed on the board."""
+    """Kicker's FG try dart: where it landed on the board. ``miss``: wide (outside scoring ring)."""
 
     zone: Literal["inner_triple", "outside_triples", "triple_ring", "green", "red"]
     segment: int
-    """Wedge 1–20 (required for logging; bulls still use mapped segment in UI)."""
+    miss: bool = False
 
 
 @dataclass(frozen=True)
@@ -129,6 +136,7 @@ class FieldGoalFakeOffenseDart:
     triple_ring: bool = False
     triple_inner: bool | None = None
     bull: Literal["none", "green", "red"] = "none"
+    miss: bool = False
 
 
 @dataclass(frozen=True)
@@ -140,12 +148,14 @@ class FieldGoalDefenseDart:
     double_ring: bool = False
     triple_ring: bool = False
     triple_inner: bool | None = None
+    miss: bool = False
 
 
 @dataclass(frozen=True)
 class PuntKick:
     segment: int
     bull: Literal["none", "green", "red"] = "none"
+    miss: bool = False
 
 
 @dataclass(frozen=True)

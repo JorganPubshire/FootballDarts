@@ -76,6 +76,8 @@ def finish_kickoff_return_touchdown(
 
 def run_out_net_yards(event: KickoffRunOutKick, rules: RuleSet) -> int | None:
     """Return net return yards toward the goal, or None if receiving-team TD."""
+    if event.miss:
+        return 0
     if event.bull == "green":
         return 50
     if event.bull == "red":
@@ -91,6 +93,8 @@ def run_out_net_yards(event: KickoffRunOutKick, rules: RuleSet) -> int | None:
 
 
 def return_dart_net_yards(event: KickoffReturnKick, rules: RuleSet) -> int | None:
+    if event.miss:
+        return 0
     if event.bull == "green":
         return 50
     if event.bull == "red":
@@ -163,6 +167,37 @@ def apply_kickoff_dart(
             s_td,
             Phase.AFTER_TOUCHDOWN_CHOICE,
             f"{label} red bull: receiving fumble — touchdown {kicker.value} (+{rules.scoring.touchdown})",
+        )
+
+    if event.miss:
+        seg = event.segment
+        if seg < rules.kickoff.segment_min or seg > rules.kickoff.segment_max:
+            return TransitionError(
+                f"segment must be {rules.kickoff.segment_min}..{rules.kickoff.segment_max}",
+                ("KickoffKick",),
+            )
+        land_y = kickoff_landing_yard_toward_kicker_scoring_goal(kicker, 0)
+        field = field_position_on_axis_for_team(receiver, land_y)
+        downs = DownAndDistance(1, 10, field.scrimmage_line)
+        st = kickoff_resolve_timeout_state(state)
+        s = replace(
+            st,
+            offense=receiver,
+            field=field,
+            downs=downs,
+            clock=st.clock,
+            kickoff_kicker=None,
+            kickoff_receiver=None,
+            kickoff_awaiting="none",
+            kickoff_pending_touchback_line=None,
+            scrimmage_pending_offense_yards=None,
+            last_touchdown_team=None,
+            declared_onside=False,
+        )
+        return TransitionOk(
+            s,
+            Phase.SCRIMMAGE_OFFENSE,
+            f"{label} MISS — 0 yd travel, ball at yard {land_y} | {format_possession_summary(s)}",
         )
 
     seg = event.segment

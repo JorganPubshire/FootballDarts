@@ -14,13 +14,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "ruff>=0.8", "pre-commit>=4.0"]
+gui = ["starlette>=0.40", "uvicorn[standard]>=0.30"]
+dev = ["pytest>=8.0", "ruff>=0.8", "pre-commit>=4.0", "httpx>=0.27"]
 
 [project.scripts]
 dart-football = "dart_football.cli.app:main"
+dart-football-gui = "dart_football.gui.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+dart_football = ["gui/static/**"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

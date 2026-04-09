@@ -31,7 +31,7 @@ _NON_SCRIMMAGE_STATUS: dict[Phase, str] = {
     Phase.FIELD_GOAL_FAKE_OFFENSE: "field goal fake — offense yardage dart (no scrimmage down)",
     Phase.FIELD_GOAL_DEFENSE: "field goal — defense dart (no scrimmage down)",
     Phase.PUNT_ATTEMPT: "punt attempt (no scrimmage down)",
-    Phase.AFTER_TOUCHDOWN_CHOICE: "after touchdown — choose extra point or two-point try (no scrimmage down)",
+    Phase.AFTER_TOUCHDOWN_CHOICE: "after touchdown — choose extra point or two-point conversion (no scrimmage down)",
     Phase.EXTRA_POINT_ATTEMPT: "extra point (no scrimmage down)",
     Phase.TWO_POINT_ATTEMPT: "two point conversion (no scrimmage down)",
     Phase.SAFETY_SEQUENCE: "safety — confirm, then free kick from own yard line",

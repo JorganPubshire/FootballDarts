@@ -87,7 +87,22 @@ def test_punt_not_on_first_down(rules: RuleSet) -> None:
     assert isinstance(o, TransitionError)
 
 
-def test_fg_not_on_first_or_second_down(rules: RuleSet) -> None:
+def test_fg_not_on_first_or_second_down_when_beyond_sixty_yards(rules: RuleSet) -> None:
+    """FG from scrimmage on 1st/2nd only when within 60 yd of goal; own 30 → 70 yd kick."""
+    s0 = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(30, 100),
+        downs=DownAndDistance(2, 10, 30),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
+    o = transition(s0, Phase.SCRIMMAGE_OFFENSE, FourthDownChoice(kind="field_goal"), rules)
+    assert isinstance(o, TransitionError)
+
+
+def test_fg_on_second_down_when_within_sixty_yards(rules: RuleSet) -> None:
+    """At opponent's 40 or closer (≤60 yd), FG may be declared on any down."""
     s0 = GameState(
         scores=Scoreboard(),
         offense=TeamId.RED,
@@ -97,7 +112,7 @@ def test_fg_not_on_first_or_second_down(rules: RuleSet) -> None:
         timeouts=Timeouts(3, 3, 3, 3),
     )
     o = transition(s0, Phase.SCRIMMAGE_OFFENSE, FourthDownChoice(kind="field_goal"), rules)
-    assert isinstance(o, TransitionError)
+    assert o.phase == Phase.FIELD_GOAL_OFFENSE_DART
 
 
 def test_scrimmage_offense_then_defense_advances(rules: RuleSet) -> None:

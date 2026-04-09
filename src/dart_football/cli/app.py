@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import argparse
-import sys
-from dataclasses import replace
 from pathlib import Path
 from typing import Literal
 
@@ -14,13 +11,12 @@ from rich.table import Table
 
 from dart_football.cli.game_header import render_game_header
 from dart_football.cli.play_ui import prompt_play_event
+from dart_football.cli.session_startup import make_cli_arg_parser, session_from_cli_args
 from dart_football.display import team_display_name
 from dart_football.engine.events import CallTimeout, Event
-from dart_football.engine.phases import Phase
 from dart_football.engine.session import GameSession
-from dart_football.engine.state import GameState, TeamId
+from dart_football.engine.state import TeamId
 from dart_football.engine.transitions import TransitionError
-from dart_football.rules.loader import default_ruleset_path, load_rules_path
 
 _SAVE_STYLE = questionary.Style(
     [
@@ -225,53 +221,9 @@ def run_interactive(session: GameSession) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    p = argparse.ArgumentParser(prog="dart-football")
-    p.add_argument(
-        "--rules",
-        type=str,
-        default=None,
-        help="Path to rules TOML (default: rules/standard.toml in the project)",
-    )
-    p.add_argument("--load", type=str, default=None, help="Load session JSON")
-    p.add_argument(
-        "--force",
-        action="store_true",
-        help="Load session even if ruleset id/version does not match the rules file (risky)",
-    )
-    p.add_argument(
-        "--large-field",
-        action="store_true",
-        help="Draw the multi-row proportional field with border (default: single-line field)",
-    )
+    p = make_cli_arg_parser()
     args = p.parse_args(argv)
-
-    rules_path = Path(args.rules) if args.rules else default_ruleset_path()
-    if not rules_path.is_file():
-        print(f"rules file not found: {rules_path}", file=sys.stderr)
-        sys.exit(1)
-    rules = load_rules_path(rules_path)
-    initial = GameState.new_game(timeouts_per_half=rules.structure.timeouts_per_half)
-    session: GameSession
-    if args.load:
-        try:
-            session = GameSession.load(
-                args.load,
-                lambda pth: load_rules_path(Path(pth)),
-                force=args.force,
-            )
-        except ValueError as e:
-            print(str(e), file=sys.stderr)
-            sys.exit(1)
-        if args.large_field:
-            session = replace(session, large_field=True)
-    else:
-        session = GameSession.new(
-            initial,
-            Phase.PRE_GAME_COIN_TOSS,
-            rules,
-            rules_path=str(rules_path.resolve()),
-            large_field=args.large_field,
-        )
+    session, _, _ = session_from_cli_args(args)
     run_interactive(session)
 
 

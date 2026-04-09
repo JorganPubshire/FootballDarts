@@ -167,6 +167,8 @@ def finish_scrimmage_net_play(
 
 
 def defense_ring_note(event: ScrimmageDefense) -> str:
+    if event.miss:
+        return " (def miss)"
     if event.bull != "none":
         return f" (def bull {event.bull})"
     parts: list[str] = []

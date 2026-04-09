@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Dart Football</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css?v=gui12" />
+  </head>
+  <body>
+    <div class="app-bg" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">◆</span>
+        <div class="brand-text">
+          <h1>Dart Football</h1>
+          <p class="tagline">Rules-driven · same engine as CLI</p>
+        </div>
+      </div>
+      <div class="topbar-center">
+        <span class="pill pill-muted" id="rules-path"></span>
+        <span class="pill pill-clock" id="clock-line"></span>
+      </div>
+      <nav class="meta-nav" id="meta-nav" aria-label="Game menu"></nav>
+    </header>
+
+    <div class="score-strip" id="score-strip" aria-label="Scoreboard">
+      <div class="team-plate team-red" id="plate-red">
+        <span class="team-label">Red</span>
+        <span class="team-score" id="score-red">0</span>
+        <span class="team-to"><abbr title="Timeouts">TO</abbr> <span id="to-red">—</span></span>
+      </div>
+      <div class="score-center">
+        <span class="vs">VS</span>
+        <span class="quarter-badge" id="quarter-badge">Q1</span>
+      </div>
+      <div class="team-plate team-green" id="plate-green">
+        <span class="team-label">Green</span>
+        <span class="team-score" id="score-green">0</span>
+        <span class="team-to"><abbr title="Timeouts">TO</abbr> <span id="to-green">—</span></span>
+      </div>
+    </div>
+
+    <main class="layout">
+      <section class="field-panel card-elevated">
+        <div class="panel-head">
+          <h2 class="panel-title">
+            <span class="panel-icon" aria-hidden="true">▭</span>
+            Field
+          </h2>
+        </div>
+        <div class="field-turf">
+          <div class="field-canvas">
+            <svg id="field-svg" xmlns="http://www.w3.org/2000/svg" aria-label="Football field"></svg>
+          </div>
+          <div class="field-legend" id="field-legend" aria-hidden="true"></div>
+        </div>
+        <div class="chips" id="chips" aria-label="Game situation"></div>
+        <p class="state-line" id="state-line"></p>
+      </section>
+
+      <aside class="side-panel">
+        <div class="phase-card card-elevated" id="phase-card">
+          <p class="phase-label">Current phase</p>
+          <h2 id="phase-title" class="phase-title">—</h2>
+          <p id="phase-hint" class="phase-hint"></p>
+        </div>
+
+        <div class="actions-block card-elevated">
+          <h3 class="block-title">Play</h3>
+          <div class="actions" id="actions"></div>
+        </div>
+
+        <div class="log-panel card-elevated">
+          <h3 class="block-title">Play log</h3>
+          <ul id="play-log" class="play-log"></ul>
+        </div>
+
+        <details class="rules-panel card-elevated">
+          <summary class="rules-summary">
+            <span class="chev" aria-hidden="true"></span>
+            Rules &amp; help
+          </summary>
+          <pre id="rules-help" class="rules-pre"></pre>
+        </details>
+      </aside>
+    </main>
+
+    <div id="modal-overlay" class="modal-overlay hidden" aria-hidden="true">
+      <div class="modal card-elevated" role="dialog" aria-labelledby="modal-title">
+        <div class="modal-head">
+          <h3 id="modal-title" class="modal-title-text">Dartboard</h3>
+          <p id="modal-sub" class="modal-sub"></p>
+        </div>
+        <div id="fg-zone" class="fg-zone hidden">
+          <p class="fg-zone-title">Field goal zone (kicker dart)</p>
+          <div class="fg-radios">
+            <label class="radio-card"
+              ><input type="radio" name="fgz" value="inner_triple" />
+              <span>Inside triple</span></label
+            >
+            <label class="radio-card"
+              ><input type="radio" name="fgz" value="triple_ring" checked />
+              <span>Triple ring</span></label
+            >
+            <label class="radio-card"
+              ><input type="radio" name="fgz" value="outside_triples" />
+              <span>Outside triples</span></label
+            >
+          </div>
+        </div>
+        <div class="dart-wrap">
+          <div class="dart-frame">
+            <svg id="dart-svg" viewBox="-200 -200 400 400" xmlns="http://www.w3.org/2000/svg"></svg>
+          </div>
+        </div>
+        <p id="dart-hover" class="dart-hover"></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="modal-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="coin-overlay" class="modal-overlay hidden" aria-hidden="true">
+      <div class="modal coin-modal card-elevated" role="dialog" aria-labelledby="coin-modal-title">
+        <div class="modal-head">
+          <h3 id="coin-modal-title" class="modal-title-text">Simulated coin toss</h3>
+          <p id="coin-modal-sub" class="modal-sub">
+            Green calls heads or tails before the flip. If the call matches the coin, Green wins; otherwise Red wins.
+          </p>
+        </div>
+        <div id="coin-call-row" class="coin-call-row">
+          <button type="button" class="action-green" id="coin-call-heads">Green calls Heads</button>
+          <button type="button" class="action-green" id="coin-call-tails">Green calls Tails</button>
+        </div>
+        <div id="coin-flip-stage" class="coin-flip-stage hidden">
+          <div class="coin-scene" aria-hidden="true">
+            <div class="coin-disc" id="coin-disc">
+              <span class="coin-side coin-side-a">H</span>
+              <span class="coin-side coin-side-b">T</span>
+            </div>
+          </div>
+          <p id="coin-result-line" class="coin-result-line"></p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="coin-modal-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="timeout-overlay" class="modal-overlay hidden" aria-hidden="true">
+      <div class="modal timeout-modal card-elevated" role="dialog" aria-labelledby="timeout-modal-title">
+        <div class="modal-head">
+          <h3 id="timeout-modal-title" class="modal-title-text">Timeout</h3>
+          <p class="modal-sub">Which team is calling timeout?</p>
+        </div>
+        <div class="timeout-pick actions">
+          <button type="button" class="action-red" id="timeout-pick-red">Red</button>
+          <button type="button" class="action-green" id="timeout-pick-green">Green</button>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="timeout-pick-cancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast hidden" role="status"></div>
+
+    <script src="/static/app.js?v=gui12" type="module"></script>
+  </body>
+</html>

@@ -14,7 +14,10 @@ from dart_football.display import dart_help, team_display_name
 from dart_football.engine.events import CoinTossWinner
 from dart_football.engine.phases import Phase
 from dart_football.engine.state import GameState, TeamId
-from dart_football.engine.transitions.field_goal_and_punt import sixty_yard_field_goal_line_ok
+from dart_football.engine.transitions.field_goal_and_punt import (
+    field_goal_may_be_declared_from_scrimmage_down,
+    sixty_yard_field_goal_line_ok,
+)
 from dart_football.rules.schema import RuleSet
 
 QUESTIONARY_STYLE = questionary.Style(
@@ -41,6 +44,13 @@ def field_goal_attempt_allowed(state: GameState, rules: RuleSet) -> bool:
     if not field_goal_in_range(state, rules):
         return False
     return sixty_yard_field_goal_line_ok(state)
+
+
+def field_goal_choice_available(state: GameState, rules: RuleSet) -> bool:
+    """Offer Field goal from scrimmage: legal attempt, and (3rd/4th/last play or within 60 yd of goal)."""
+    if not field_goal_attempt_allowed(state, rules):
+        return False
+    return field_goal_may_be_declared_from_scrimmage_down(state)
 
 
 def read_int(console: Console, prompt: str, lo: int, hi: int) -> int | None:

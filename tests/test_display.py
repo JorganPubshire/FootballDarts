@@ -10,7 +10,11 @@ from dart_football.display import (
     yards_from_own_goal,
     yards_to_opponent_goal_line,
 )
-from dart_football.display.field_visual import first_down_line_yard, format_field_visual
+from dart_football.display.field_visual import (
+    first_down_line_yard,
+    format_field_visual,
+    gui_field_graphic_spec,
+)
 from dart_football.engine.phases import Phase
 from dart_football.engine.state import (
     DownAndDistance,
@@ -93,6 +97,31 @@ def test_first_down_line_yard() -> None:
     f2 = FieldPosition(60, 0)
     d2 = DownAndDistance(1, 10, 60)
     assert first_down_line_yard(f2, d2) == 50
+
+
+def test_gui_field_graphic_spec() -> None:
+    s = GameState(
+        scores=Scoreboard(),
+        offense=TeamId.RED,
+        field=FieldPosition(40, 100),
+        downs=DownAndDistance(2, 10, 40),
+        clock=GameClock(1, 0, 0),
+        timeouts=Timeouts(3, 3, 3, 3),
+    )
+    g = gui_field_graphic_spec(s, Phase.SCRIMMAGE_OFFENSE)
+    assert g["show_scrimmage_markers"] is True
+    assert g["los_yard"] == 40
+    assert g["first_down_yard"] == 50
+    assert g["goal_yard"] == 100
+    assert g["offense"] == "red"
+    assert g["down"] == 2
+    assert g["to_go"] == 10
+    assert g["los_and_first_same"] is False
+
+    g_ko = gui_field_graphic_spec(s, Phase.KICKOFF_KICK)
+    assert g_ko["show_scrimmage_markers"] is False
+    assert g_ko["first_down_yard"] is None
+    assert g_ko["down"] is None
 
 
 def test_format_field_visual_contains_markers() -> None:

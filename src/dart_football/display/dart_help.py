@@ -535,7 +535,8 @@ def overtime_start_instructions(state: GameState, rules: RuleSet) -> str:
     lines = [
         "Overtime",
         "",
-        "Regulation ended tied. Record who won the overtime coin toss (same as opening toss).",
+        "Regulation ended tied. Decide the overtime coin toss like kickoff: darts (closest to board center) "
+        "or a simulated heads/tails flip (Green calls, then flip).",
         "The winner then chooses kick or receive on the next screen.",
     ]
     if rules.overtime.template == "first_score":

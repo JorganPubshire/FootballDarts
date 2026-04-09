@@ -27,6 +27,7 @@ from dart_football.cli.play_ui.shared import (
     QUESTIONARY_STYLE,
     MetaAction,
     field_goal_attempt_allowed,
+    field_goal_choice_available,
     meta_choices_for_phase,
     prompt_coin_toss_menu,
 )
@@ -224,8 +225,7 @@ def prompt_play_event(
         ]
         if state.downs.down >= 2:
             choices.append(Choice("Punt", "fd_punt"))
-        fg_on_allowed_down = state.downs.down in (3, 4) or state.last_play_of_period
-        if fg_on_allowed_down and field_goal_attempt_allowed(state, rules):
+        if field_goal_choice_available(state, rules):
             choices.append(Choice("Field goal", "fd_fg"))
         choices.append(Separator("─" * 48))
         choices.extend(meta)
@@ -455,7 +455,7 @@ def prompt_play_event(
     if phase is Phase.AFTER_TOUCHDOWN_CHOICE:
         console.print(
             Panel(
-                "Choose a one-point kick or a two-point try.",
+                "Choose a one-point kick or a two-point conversion.",
                 title="After touchdown",
                 border_style="cyan",
             )

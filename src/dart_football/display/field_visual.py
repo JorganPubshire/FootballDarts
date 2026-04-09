@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from rich.text import Text
 
 from dart_football.engine.phases import Phase, is_scrimmage_play_phase
@@ -43,6 +45,31 @@ def first_down_line_yard(field: FieldPosition, downs: DownAndDistance) -> int:
     if g == 100:
         return min(100, s + t)
     return max(0, s - t)
+
+
+def gui_field_graphic_spec(state: GameState, phase: Phase | None) -> dict[str, Any]:
+    """
+    Structured field layout for the web GUI (SVG), matching ``format_field_visual`` markers:
+    Green goal at yard 0 (left), Red goal at yard 100 (right).
+    """
+    f = state.field
+    d = state.downs
+    los = f.scrimmage_line
+    show = is_scrimmage_play_phase(phase)
+    fd: int | None = None
+    if show:
+        fd = first_down_line_yard(f, d)
+    same = bool(show and fd is not None and los == fd)
+    return {
+        "show_scrimmage_markers": show,
+        "los_yard": los,
+        "first_down_yard": fd,
+        "goal_yard": f.goal_yard,
+        "offense": state.offense.value,
+        "down": d.down if show else None,
+        "to_go": d.to_go if show else None,
+        "los_and_first_same": same,
+    }
 
 
 def _yard_to_col(yard: int) -> int:

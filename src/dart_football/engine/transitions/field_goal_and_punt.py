@@ -10,6 +10,16 @@ from dart_football.engine.transitions.scrimmage_resolution import effective_segm
 from dart_football.engine.transitions.types import TransitionError
 from dart_football.rules.schema import RuleSet
 
+# Opponent's 40-yard line and closer (60 yards from the goal being attacked).
+FIELD_GOAL_DECLARE_MAX_DISTANCE_FROM_GOAL = 60
+
+
+def field_goal_may_be_declared_from_scrimmage_down(state: GameState) -> bool:
+    """True if down/field position allows declaring a FG from ``SCRIMMAGE_OFFENSE`` (not 4th-down phase)."""
+    if state.downs.down in (3, 4) or state.last_play_of_period:
+        return True
+    return yards_to_goal_line(state.field) <= FIELD_GOAL_DECLARE_MAX_DISTANCE_FROM_GOAL
+
 
 def round_up_to_ten(yards: int) -> int:
     return ((yards + 9) // 10) * 10
@@ -93,6 +103,8 @@ def fake_field_goal_defense_green_field(
 
 
 def field_goal_fake_yards_from_dart(event: FieldGoalFakeOffenseDart, rules: RuleSet) -> int | None:
+    if event.miss:
+        return 0
     sc = rules.scrimmage
     eff = (
         event.segment

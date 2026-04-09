@@ -50,11 +50,11 @@ def event_to_dict(e: Event) -> dict[str, Any]:
     if name == "ChooseKickoffKind":
         return {"type": name, "onside": e.onside}
     if name == "KickoffKick":
-        return {"type": name, "segment": e.segment, "bull": e.bull}
+        return {"type": name, "segment": e.segment, "bull": e.bull, "miss": e.miss}
     if name == "ChooseKickoffTouchbackOrRun":
         return {"type": name, "take_touchback": e.take_touchback}
     if name == "KickoffRunOutKick":
-        return {"type": name, "segment": e.segment, "bull": e.bull}
+        return {"type": name, "segment": e.segment, "bull": e.bull, "miss": e.miss}
     if name == "KickoffReturnKick":
         return {
             "type": name,
@@ -63,6 +63,7 @@ def event_to_dict(e: Event) -> dict[str, Any]:
             "triple_ring": e.triple_ring,
             "triple_inner": e.triple_inner,
             "bull": e.bull,
+            "miss": e.miss,
         }
     if name == "ScrimmageOffense":
         return {
@@ -72,6 +73,7 @@ def event_to_dict(e: Event) -> dict[str, Any]:
             "triple_ring": e.triple_ring,
             "triple_inner": e.triple_inner,
             "bull": e.bull,
+            "miss": e.miss,
         }
     if name == "ScrimmageDefense":
         return {
@@ -81,6 +83,7 @@ def event_to_dict(e: Event) -> dict[str, Any]:
             "double_ring": e.double_ring,
             "triple_ring": e.triple_ring,
             "triple_inner": e.triple_inner,
+            "miss": e.miss,
         }
     if name == "ScrimmageStripDart":
         return {"type": name, "segment": e.segment}
@@ -89,7 +92,7 @@ def event_to_dict(e: Event) -> dict[str, Any]:
     if name == "FieldGoalOutcome":
         return {"type": name, "kind": e.kind}
     if name == "FieldGoalOffenseDart":
-        return {"type": name, "zone": e.zone, "segment": e.segment}
+        return {"type": name, "zone": e.zone, "segment": e.segment, "miss": e.miss}
     if name == "ChooseFieldGoalAfterGreen":
         return {"type": name, "real_kick": e.real_kick}
     if name == "FieldGoalFakeOffenseDart":
@@ -100,6 +103,7 @@ def event_to_dict(e: Event) -> dict[str, Any]:
             "triple_ring": e.triple_ring,
             "triple_inner": e.triple_inner,
             "bull": e.bull,
+            "miss": e.miss,
         }
     if name == "FieldGoalDefenseDart":
         return {
@@ -109,9 +113,10 @@ def event_to_dict(e: Event) -> dict[str, Any]:
             "double_ring": e.double_ring,
             "triple_ring": e.triple_ring,
             "triple_inner": e.triple_inner,
+            "miss": e.miss,
         }
     if name == "PuntKick":
-        return {"type": name, "segment": e.segment, "bull": e.bull}
+        return {"type": name, "segment": e.segment, "bull": e.bull, "miss": e.miss}
     if name == "ChooseExtraPointOrTwo":
         return {"type": name, "extra_point": e.extra_point}
     if name == "ExtraPointOutcome":
@@ -137,6 +142,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
         return KickoffKick(
             segment=int(d["segment"]),
             bull=d.get("bull", "none"),  # type: ignore[arg-type]
+            miss=bool(d.get("miss", False)),
         )
     if t == "ChooseKickoffTouchbackOrRun":
         return ChooseKickoffTouchbackOrRun(take_touchback=bool(d["take_touchback"]))
@@ -144,6 +150,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
         return KickoffRunOutKick(
             segment=int(d["segment"]),
             bull=d.get("bull", "none"),  # type: ignore[arg-type]
+            miss=bool(d.get("miss", False)),
         )
     if t == "KickoffReturnKick":
         ti = d.get("triple_inner")
@@ -158,6 +165,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
             triple_ring=bool(d.get("triple_ring", False)),
             triple_inner=triple_inner,
             bull=d.get("bull", "none"),  # type: ignore[arg-type]
+            miss=bool(d.get("miss", False)),
         )
     if t == "ScrimmageOffense":
         ti = d.get("triple_inner")
@@ -172,6 +180,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
             triple_ring=bool(d.get("triple_ring", False)),
             triple_inner=triple_inner_so,
             bull=d.get("bull", "none"),  # type: ignore[arg-type]
+            miss=bool(d.get("miss", False)),
         )
     if t == "ScrimmageDefense":
         ti = d.get("triple_inner")
@@ -186,6 +195,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
             double_ring=bool(d.get("double_ring", False)),
             triple_ring=bool(d.get("triple_ring", False)),
             triple_inner=triple_inner_d,
+            miss=bool(d.get("miss", False)),
         )
     if t == "ScrimmageStripDart":
         return ScrimmageStripDart(segment=int(d["segment"]))
@@ -197,6 +207,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
         return FieldGoalOffenseDart(
             zone=d["zone"],  # type: ignore[arg-type]
             segment=int(d["segment"]),
+            miss=bool(d.get("miss", False)),
         )
     if t == "ChooseFieldGoalAfterGreen":
         return ChooseFieldGoalAfterGreen(real_kick=bool(d["real_kick"]))
@@ -213,6 +224,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
             triple_ring=bool(d.get("triple_ring", False)),
             triple_inner=triple_inner_f,
             bull=d.get("bull", "none"),  # type: ignore[arg-type]
+            miss=bool(d.get("miss", False)),
         )
     if t == "FieldGoalDefenseDart":
         ti = d.get("triple_inner")
@@ -227,9 +239,14 @@ def event_from_dict(d: dict[str, Any]) -> Event:
             double_ring=bool(d.get("double_ring", False)),
             triple_ring=bool(d.get("triple_ring", False)),
             triple_inner=triple_inner_fd,
+            miss=bool(d.get("miss", False)),
         )
     if t == "PuntKick":
-        return PuntKick(segment=int(d["segment"]), bull=d.get("bull", "none"))  # type: ignore[arg-type]
+        return PuntKick(
+            segment=int(d["segment"]),
+            bull=d.get("bull", "none"),  # type: ignore[arg-type]
+            miss=bool(d.get("miss", False)),
+        )
     if t in ("ChooseExtraPointOrTwo", "ChoosePatOrTwo"):
         return ChooseExtraPointOrTwo(extra_point=bool(d["extra_point"]))
     if t == "ExtraPointOutcome":

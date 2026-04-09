@@ -52,6 +52,7 @@ from dart_football.engine.transitions.field_goal_and_punt import (
     fg_kick_range_error_or_none,
     field_after_missed_field_goal,
     field_goal_fake_yards_from_dart,
+    field_goal_may_be_declared_from_scrimmage_down,
     field_goal_sequence_clear_fields,
     first_down_line_yard,
     sixty_yard_field_goal_line_ok,
@@ -342,7 +343,7 @@ def handle_two_point_attempt(
         return TransitionError("internal: missing last_touchdown_team", ())
     scoring = state.last_touchdown_team
     s2 = state
-    summary = "Two-point try no good"
+    summary = "Two-point conversion no good"
     if event.good:
         s2 = replace(s2, scores=s2.scores.add(scoring, rules.scoring.two_point))
         summary = f"Two-point good (+{rules.scoring.two_point})"
@@ -452,6 +453,15 @@ def handle_field_goal_offense_dart(
         return TransitionError(
             "expected field goal offense dart (or legacy outcome)",
             ("FieldGoalOffenseDart", "FieldGoalOutcome"),
+        )
+    if event.miss:
+        re = fg_kick_range_error_or_none(st0, rules)
+        if re is not None:
+            return re
+        return TransitionOk(
+            replace(st0, fg_snap_field=snap, fg_pending_outcome="miss"),
+            Phase.FIELD_GOAL_DEFENSE,
+            "FG dart miss (outer ring) — defense may block",
         )
     sc = rules.scrimmage
     eff = event.segment
@@ -682,6 +692,28 @@ def handle_punt_attempt(
     if not isinstance(event, PuntKick):
         return TransitionError("expected punt segment", ("PuntKick",))
     pr = rules.punt
+    if event.miss:
+        eff = event.segment
+        if eff < pr.segment_min or eff > pr.segment_max:
+            return TransitionError(
+                f"punt segment must be {pr.segment_min}..{pr.segment_max}",
+                ("PuntKick",),
+            )
+        new_clock, st = advance_clock_for_scrimmage_play(state, rules)
+        s_inter = replace(
+            st,
+            clock=new_clock,
+            declared_punt=False,
+            scrimmage_pending_offense_yards=None,
+            scrimmage_pending_offense_kind="none",
+            scrimmage_pending_offense_eff_segment=None,
+        )
+        return no_gain_advance_down(
+            s_inter,
+            state,
+            state.field,
+            "Punt miss — no gain at LOS",
+        )
     eff = event.segment
     if eff < pr.segment_min or eff > pr.segment_max:
         return TransitionError(
@@ -764,9 +796,10 @@ def handle_scrimmage_offense(
                 "Punt attempt",
             )
         if event.kind == "field_goal":
-            if state.downs.down not in (3, 4) and not state.last_play_of_period:
+            if not field_goal_may_be_declared_from_scrimmage_down(state):
                 return TransitionError(
-                    "field goals only on 3rd or 4th down (unless last play of half or game)",
+                    "field goals only on 3rd or 4th down (unless last play of half or game), "
+                    "or when within 60 yards of the goal",
                     ("FourthDownChoice",),
                 )
             dist = yards_to_goal_line(state.field)
@@ -807,6 +840,21 @@ def handle_scrimmage_offense(
         return TransitionError(
             f"segment must be {sc.segment_min}..{sc.segment_max}",
             ("ScrimmageOffense",),
+        )
+    if event.miss:
+        if not sc.use_wedge_number_yards:
+            s = replace(state, scrimmage_pending_offense_yards=0)
+        else:
+            s = replace(
+                state,
+                scrimmage_pending_offense_yards=0,
+                scrimmage_pending_offense_kind="wedge",
+                scrimmage_pending_offense_eff_segment=eff,
+            )
+        return TransitionOk(
+            s,
+            Phase.SCRIMMAGE_DEFENSE,
+            f"Offense dart MISS (seg {eff}) → 0 yds (await defense)",
         )
     if not sc.use_wedge_number_yards:
         if event.bull == "red":
@@ -895,6 +943,25 @@ def handle_scrimmage_defense(
         return TransitionError(
             f"segment must be {sc.segment_min}..{sc.segment_max}",
             ("ScrimmageDefense",),
+        )
+
+    if event.miss:
+        def_yards = 0
+        raw_net = off_yards - def_yards
+        net = max(raw_net, -sc.max_loss_yards)
+        new_field = advance_field_position(state.field, net)
+        new_clock, st = advance_clock_for_scrimmage_play(state, rules)
+        s_inter = replace(
+            st,
+            field=new_field,
+            clock=new_clock,
+            scrimmage_pending_offense_yards=None,
+            scrimmage_pending_offense_kind="none",
+            scrimmage_pending_offense_eff_segment=None,
+        )
+        dn = defense_ring_note(event)
+        return finish_scrimmage_net_play(
+            state, rules, s_inter, new_field, off_yards, def_yards, net, dn
         )
 
     if not sc.use_wedge_number_yards or kind == "none":
