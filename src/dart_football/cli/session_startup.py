@@ -32,6 +32,13 @@ def _add_session_arguments(p: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Draw the multi-row proportional field with border (default: single-line field)",
     )
+    p.add_argument(
+        "--input",
+        choices=["click", "camera"],
+        default="click",
+        dest="gui_input",
+        help="Default dart input in the GUI (click board vs webcam); can be changed in the UI.",
+    )
 
 
 def make_cli_arg_parser() -> argparse.ArgumentParser:

@@ -16,7 +16,7 @@ from dart_football.engine.events import CallTimeout
 from dart_football.engine.session import GameSession
 from dart_football.engine.state import TeamId
 from dart_football.engine.transitions import TransitionError
-from dart_football.gui.ui_state import build_ui_payload
+from dart_football.gui.ui_state import CORRECTABLE_DART_EVENT_NAMES, build_ui_payload
 
 
 def _json_response(data: Any, status: int = 200) -> JSONResponse:
@@ -78,6 +78,35 @@ def create_app(session_holder: dict[str, GameSession | None]) -> Starlette:
             if s.undo():
                 return _json_response({"ok": True, "ui": build_ui_payload(s)})
             return _json_response({"ok": False, "error": "nothing to undo"}, status=400)
+
+        if action == "correct_dart":
+            if not isinstance(body, dict) or "event" not in body:
+                return _json_response({"ok": False, "error": "expected {event: ...}"}, status=400)
+            try:
+                ev = event_from_dict(body["event"])
+            except (KeyError, ValueError, TypeError) as e:
+                return _json_response({"ok": False, "error": f"bad event: {e}"}, status=400)
+            if s.head <= 0:
+                return _json_response({"ok": False, "error": "nothing to correct"}, status=400)
+            prev = s.records[s.head - 1].event
+            prev_name = type(prev).__name__
+            if prev_name not in CORRECTABLE_DART_EVENT_NAMES:
+                return _json_response({"ok": False, "error": "last play is not a correctable dart"}, status=400)
+            if type(ev).__name__ != prev_name:
+                return _json_response({"ok": False, "error": "replacement must match last dart type"}, status=400)
+            out = s.correct(ev, source="gui")
+            if isinstance(out, TransitionError):
+                return _json_response({"ok": False, "error": out.message}, status=400)
+            state_after, _ = s.current_state_phase()
+            halftime = q_before == 2 and state_after.clock.quarter == 3
+            return _json_response(
+                {
+                    "ok": True,
+                    "effects_summary": out.effects_summary,
+                    "halftime_prompt": halftime,
+                    "ui": build_ui_payload(s),
+                }
+            )
 
         if action == "history":
             lines = [

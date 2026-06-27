@@ -132,6 +132,48 @@ body {
   min-width: 0;
 }
 
+.input-mode-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.input-mode-label select {
+  font-family: var(--font-ui);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.35rem 0.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.input-mode-label select:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.camera-confirm-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+
+.camera-confirm-wrap input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;
@@ -736,6 +778,37 @@ details[open] .chev::before {
   animation: modalUp 0.25s ease;
 }
 
+/* Record-dart modal: expand when webcam + board are shown side by side */
+.modal.dart-modal:has(.dart-camera-column:not(.hidden)) {
+  max-width: min(1180px, 96vw);
+  max-height: min(94vh, 900px);
+  overflow: auto;
+}
+
+.modal.dart-modal:has(.dart-camera-column:not(.hidden)) .dart-modal-grid {
+  grid-template-columns: minmax(300px, 1fr) minmax(380px, 1.15fr);
+  gap: 1rem;
+  padding: 0 0.5rem;
+}
+
+.modal.dart-modal:has(.dart-camera-column:not(.hidden)) .dart-cam-video {
+  max-height: min(380px, 46vh);
+}
+
+.modal.dart-modal:has(.dart-camera-column:not(.hidden)) #dart-svg {
+  width: min(440px, 100%);
+}
+
+@media (max-width: 820px) {
+  .modal.dart-modal:has(.dart-camera-column:not(.hidden)) .dart-modal-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .modal.dart-modal:has(.dart-camera-column:not(.hidden)) #dart-svg {
+    width: min(400px, 92vw);
+  }
+}
+
 @keyframes modalUp {
   from {
     opacity: 0;
@@ -809,10 +882,147 @@ details[open] .chev::before {
   border-color: rgba(94, 184, 255, 0.4);
 }
 
+.dart-modal-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+  align-items: start;
+}
+
+.dart-camera-column {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.65rem 0.85rem 0.25rem;
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--panel-border);
+  min-width: 0;
+}
+
+.dart-cam-video {
+  width: 100%;
+  max-height: 240px;
+  border-radius: var(--radius-sm);
+  background: #0a0a12;
+  object-fit: contain;
+}
+
+.cam-status {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.cam-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.cam-controls .btn {
+  font-size: 0.78rem;
+  padding: 0.45rem 0.85rem;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+.btn-secondary:hover {
+  border-color: var(--accent-dim);
+}
+
+.action-accent {
+  background: linear-gradient(180deg, rgba(94, 184, 255, 0.35), rgba(94, 184, 255, 0.12));
+  border-color: var(--accent-dim);
+  color: var(--text);
+}
+
+.cam-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.25rem;
+}
+
+.cam-predicted-line {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.35;
+}
+
+.cam-confirm-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+#cam-adjust-hit.btn-active-adjust {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim);
+}
+
+.cam-calib-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+.cam-calib-panel {
+  max-width: min(920px, 96vw);
+  padding: 1rem 1.15rem 1.1rem;
+}
+
+.cam-calib-step {
+  margin: 0 0 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.cam-calib-hint {
+  margin: 0 0 0.65rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.cam-calib-canvas {
+  display: block;
+  width: 100%;
+  max-height: min(70vh, 520px);
+  border-radius: var(--radius-sm);
+  cursor: crosshair;
+  background: #000;
+}
+
+.cam-calib-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  justify-content: flex-end;
+}
+
 .dart-wrap {
   padding: 0.75rem 1rem 0.5rem;
   display: flex;
   justify-content: center;
+  min-width: 0;
 }
 
 .dart-frame {

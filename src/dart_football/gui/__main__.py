@@ -9,7 +9,7 @@ from dart_football.gui.serve import run_gui_server
 def main(argv: list[str] | None = None) -> None:
     args = make_gui_arg_parser().parse_args(argv)
     session, _, _ = session_from_cli_args(args)
-    run_gui_server(session)
+    run_gui_server(session, gui_input=getattr(args, "gui_input", "click"))
 
 
 if __name__ == "__main__":

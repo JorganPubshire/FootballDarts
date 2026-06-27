@@ -10,12 +10,19 @@ import uvicorn
 from dart_football.engine.session import GameSession
 
 
-def run_gui_server(session: GameSession, *, host: str = "127.0.0.1", port: int = 8765) -> None:
+def run_gui_server(
+    session: GameSession,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8765,
+    gui_input: str = "click",
+) -> None:
     holder: dict[str, GameSession | None] = {"session": session}
     from dart_football.gui.server import create_app
 
     app = create_app(holder)
-    url = f"http://{host}:{port}/"
+    mode = gui_input if gui_input in ("click", "camera") else "click"
+    url = f"http://{host}:{port}/?input={mode}"
 
     def _open() -> None:
         import time

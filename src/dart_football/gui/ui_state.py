@@ -7,7 +7,7 @@ from typing import Any
 from dart_football.cli.play_ui.shared import field_goal_attempt_allowed, field_goal_choice_available
 from dart_football.display import dart_help
 from dart_football.display.field_visual import gui_field_graphic_spec
-from dart_football.engine.event_codec import encode_game_state
+from dart_football.engine.event_codec import encode_game_state, event_to_dict
 from dart_football.engine.phases import Phase
 from dart_football.engine.session import GameSession
 from dart_football.engine.state import GameState, TeamId
@@ -15,6 +15,33 @@ from dart_football.engine.state import GameState, TeamId
 
 def _defense_team(state: GameState) -> TeamId:
     return TeamId.GREEN if state.offense is TeamId.RED else TeamId.RED
+
+
+# Last transition was one of these → GUI may offer "replace dart" via undo+re-apply.
+CORRECTABLE_DART_EVENT_NAMES: frozenset[str] = frozenset(
+    {
+        "KickoffKick",
+        "KickoffRunOutKick",
+        "KickoffReturnKick",
+        "ScrimmageOffense",
+        "ScrimmageDefense",
+        "ScrimmageStripDart",
+        "FieldGoalOffenseDart",
+        "FieldGoalFakeOffenseDart",
+        "FieldGoalDefenseDart",
+        "PuntKick",
+    }
+)
+
+
+def correctable_dart_payload(session: GameSession) -> dict[str, Any] | None:
+    if session.head <= 0:
+        return None
+    last_ev = session.records[session.head - 1].event
+    name = type(last_ev).__name__
+    if name not in CORRECTABLE_DART_EVENT_NAMES:
+        return None
+    return {"type": name, "event": event_to_dict(last_ev)}
 
 
 def _with_accent(action: dict[str, Any], team: TeamId | None) -> dict[str, Any]:
@@ -362,6 +389,7 @@ def build_ui_payload(session: GameSession) -> dict[str, Any]:
         "phase": phase.value,
         "state": encode_game_state(state),
         "field_graphic": field_graphic,
+        "correctable_dart": correctable_dart_payload(session),
         "rules_path": session.rules_path,
         "ruleset_id": rules.ruleset_id,
         "ruleset_version": rules.ruleset_version,

@@ -147,12 +147,12 @@ class GameSession:
         self.head = r.seq
         return True
 
-    def correct(self, event: Event) -> TransitionOk | TransitionError:
+    def correct(self, event: Event, source: str = "cli") -> TransitionOk | TransitionError:
         if self.head <= 0:
             return TransitionError("nothing to correct", ())
         voided_seq = self.head
         self.undo()
-        out = self.apply(event, source="cli")
+        out = self.apply(event, source=source)
         if isinstance(out, TransitionError):
             restored = self.redo_stack.pop()
             self.records.append(restored)

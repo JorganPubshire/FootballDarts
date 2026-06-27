@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@500;600;700;800&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/static/styles.css?v=gui12" />
+    <link rel="stylesheet" href="/static/styles.css?v=gui17" />
   </head>
   <body>
     <div class="app-bg" aria-hidden="true"></div>
@@ -24,6 +24,21 @@
         </div>
       </div>
       <div class="topbar-center">
+        <label class="input-mode-label" title="How to record dart hits on the board"
+          >Input
+          <select id="input-mode-select" aria-label="Dart input mode">
+            <option value="click">Click board</option>
+            <option value="camera">Webcam</option>
+          </select>
+        </label>
+        <label
+          class="camera-confirm-wrap hidden"
+          id="camera-confirm-wrap"
+          title="Off: hits apply immediately; use Correct last dart in the menu if the read was wrong."
+        >
+          <input type="checkbox" id="camera-confirm-hits" checked aria-label="Confirm webcam hits before applying" />
+          <span>Confirm webcam hits</span>
+        </label>
         <span class="pill pill-muted" id="rules-path"></span>
         <span class="pill pill-clock" id="clock-line"></span>
       </div>
@@ -93,7 +108,7 @@
     </main>
 
     <div id="modal-overlay" class="modal-overlay hidden" aria-hidden="true">
-      <div class="modal card-elevated" role="dialog" aria-labelledby="modal-title">
+      <div class="modal dart-modal card-elevated" role="dialog" aria-labelledby="modal-title">
         <div class="modal-head">
           <h3 id="modal-title" class="modal-title-text">Dartboard</h3>
           <p id="modal-sub" class="modal-sub"></p>
@@ -115,9 +130,45 @@
             >
           </div>
         </div>
-        <div class="dart-wrap">
-          <div class="dart-frame">
-            <svg id="dart-svg" viewBox="-200 -200 400 400" xmlns="http://www.w3.org/2000/svg"></svg>
+        <div class="dart-modal-grid" id="dart-modal-grid">
+          <div id="dart-camera-column" class="dart-camera-column hidden">
+            <video id="dart-cam-video" class="dart-cam-video" playsinline autoplay muted></video>
+            <canvas id="dart-cam-capture" width="640" height="480" class="hidden"></canvas>
+            <p id="cam-status" class="cam-status"></p>
+            <div class="cam-controls">
+              <button type="button" class="btn btn-secondary" id="cam-calibrate">Calibrate board</button>
+              <button type="button" class="btn btn-secondary" id="cam-ref">Capture empty board</button>
+              <button type="button" class="btn" id="cam-detect">Detect dart</button>
+            </div>
+            <div id="cam-confirm" class="cam-confirm hidden">
+              <p id="cam-predicted-line" class="cam-predicted-line" aria-live="polite"></p>
+              <div class="cam-confirm-row">
+                <button type="button" class="btn action-accent" id="cam-use-hit">Confirm</button>
+                <button type="button" class="btn btn-secondary" id="cam-adjust-hit">Edit on board</button>
+                <button type="button" class="btn btn-ghost" id="cam-retake">Retake</button>
+              </div>
+            </div>
+          </div>
+          <div class="dart-wrap" id="dart-click-wrap">
+            <div class="dart-frame">
+              <svg id="dart-svg" viewBox="-200 -200 400 400" xmlns="http://www.w3.org/2000/svg"></svg>
+            </div>
+          </div>
+        </div>
+        <div id="cam-calib-overlay" class="cam-calib-overlay hidden" aria-hidden="true">
+          <div class="cam-calib-panel card-elevated">
+            <p id="cam-calib-step" class="cam-calib-step">Board setup 1 / 4</p>
+            <p id="cam-calib-hint" class="cam-calib-hint">
+              Drag five markers anywhere on the video: bull center, then outer wire at 20 (top), 6 (right), 3
+              (bottom), and 11 (left). Off-angle cameras are fine — dotted ellipses (white outer, blue doubles,
+              gold triples) show the perspective mapping; align them with the board, then Save board setup.
+            </p>
+            <canvas id="cam-calib-canvas" class="cam-calib-canvas" width="640" height="480"></canvas>
+            <div class="cam-calib-actions">
+              <button type="button" class="btn" id="cam-calib-save">Save board setup</button>
+              <button type="button" class="btn btn-ghost hidden" id="cam-calib-skip">Skip dart colors</button>
+              <button type="button" class="btn btn-ghost" id="cam-calib-cancel">Cancel</button>
+            </div>
           </div>
         </div>
         <p id="dart-hover" class="dart-hover"></p>
@@ -172,6 +223,6 @@
 
     <div id="toast" class="toast hidden" role="status"></div>
 
-    <script src="/static/app.js?v=gui12" type="module"></script>
+    <script src="/static/app.js?v=gui22" type="module"></script>
   </body>
 </html>
